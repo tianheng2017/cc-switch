@@ -693,8 +693,8 @@ export function DeepLinkImportDialog() {
                             </div>
                             <div className="col-span-2 text-sm">
                               {t("deeplink.usageAutoIntervalValue", {
-                                defaultValue: "每 {{minutes}} 分钟",
-                                minutes: request.usageAutoInterval,
+                                defaultValue: "每 {{seconds}} 秒",
+                                seconds: request.usageAutoInterval,
                               })}
                             </div>
                           </div>

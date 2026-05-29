@@ -38,6 +38,23 @@ interface UsageScriptModalProps {
   onSave: (script: UsageScript) => void;
 }
 
+const DEFAULT_AUTO_QUERY_INTERVAL_SECONDS = 5 * 60;
+const MAX_AUTO_QUERY_INTERVAL_SECONDS = 24 * 60 * 60;
+
+const normalizeUsageScriptAutoInterval = (script: UsageScript): UsageScript => {
+  if (
+    script.autoQueryInterval !== undefined ||
+    script.autoIntervalMinutes === undefined
+  ) {
+    return script;
+  }
+
+  return {
+    ...script,
+    autoQueryInterval: script.autoIntervalMinutes * 60,
+  };
+};
+
 // 生成预设模板的函数（支持国际化）
 const generatePresetTemplates = (
   t: (key: string) => string,
@@ -215,7 +232,9 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
   const providerCredentials = getProviderCredentials();
 
   const [script, setScript] = useState<UsageScript>(() => {
-    const savedScript = provider.meta?.usage_script;
+    const savedScript = provider.meta?.usage_script
+      ? normalizeUsageScriptAutoInterval(provider.meta.usage_script)
+      : undefined;
     if (savedScript) {
       // 已有配置：如果是 coding_plan 但没有 codingPlanProvider，自动检测填充
       if (
@@ -284,11 +303,14 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
       );
       return 0;
     }
-    const clamped = Math.max(0, Math.min(1440, Math.floor(num)));
+    const clamped = Math.max(
+      0,
+      Math.min(MAX_AUTO_QUERY_INTERVAL_SECONDS, Math.floor(num)),
+    );
     if (clamped !== num && num > 0) {
       toast.info(
         t("usageScript.intervalAdjusted", { value: clamped }) ||
-          `自动查询间隔已调整为 ${clamped} 分钟`,
+          `自动查询间隔已调整为 ${clamped} 秒`,
       );
     }
     return clamped;
@@ -1069,9 +1091,14 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
                   id="usage-interval"
                   type="number"
                   min={0}
-                  max={1440}
+                  max={MAX_AUTO_QUERY_INTERVAL_SECONDS}
+                  step={1}
                   value={
-                    script.autoQueryInterval ?? script.autoIntervalMinutes ?? 5
+                    script.autoQueryInterval ??
+                    (script.autoIntervalMinutes !== undefined
+                      ? script.autoIntervalMinutes * 60
+                      : undefined) ??
+                    DEFAULT_AUTO_QUERY_INTERVAL_SECONDS
                   }
                   onChange={(e) =>
                     setScript({

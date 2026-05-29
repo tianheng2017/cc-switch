@@ -63,8 +63,8 @@ export interface UsageScript {
   accessToken?: string; // 访问令牌（NewAPI 模板使用）
   userId?: string; // 用户ID（NewAPI 模板使用）
   codingPlanProvider?: string; // Coding Plan 供应商标识（如 "kimi", "zhipu", "minimax"）
-  autoQueryInterval?: number; // 自动查询间隔（单位：分钟，0 表示禁用）
-  autoIntervalMinutes?: number; // 自动查询间隔（分钟）- 别名字段
+  autoQueryInterval?: number; // 自动查询间隔（单位：秒，0 表示禁用）
+  autoIntervalMinutes?: number; // 自动查询间隔（分钟）- 历史别名字段
   request?: {
     // 请求配置
     url?: string; // 请求 URL
@@ -79,7 +79,7 @@ const DEFAULT_USAGE_SCRIPT: UsageScript = {
   language: "javascript",
   code: "",
   timeout: 10,
-  autoQueryInterval: 5,
+  autoQueryInterval: 300,
 };
 
 export function createUsageScript(

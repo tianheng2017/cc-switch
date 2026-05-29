@@ -211,14 +211,14 @@ pub async fn test_usage_script(
 
 /// Validate UsageScript configuration (boundary checks)
 pub(crate) fn validate_usage_script(script: &UsageScript) -> Result<(), AppError> {
-    // Validate auto query interval (0-1440 minutes, max 24 hours)
+    // Validate auto query interval (0-86400 seconds, max 24 hours)
     if let Some(interval) = script.auto_query_interval {
-        if interval > 1440 {
+        if interval > 86_400 {
             return Err(AppError::localized(
                 "usage_script.interval_too_large",
-                format!("自动查询间隔不能超过 1440 分钟（24小时），当前值: {interval}"),
+                format!("自动查询间隔不能超过 86400 秒（24小时），当前值: {interval}"),
                 format!(
-                    "Auto query interval cannot exceed 1440 minutes (24 hours), current: {interval}"
+                    "Auto query interval cannot exceed 86400 seconds (24 hours), current: {interval}"
                 ),
             ));
         }

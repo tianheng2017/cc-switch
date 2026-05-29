@@ -1345,12 +1345,12 @@
     "timeoutHint": "範圍: 2-30 秒",
     "timeoutMustBeInteger": "逾時時間必須為整數，小數部分已忽略",
     "timeoutCannotBeNegative": "逾時時間不能為負數",
-    "autoIntervalMinutes": "自動查詢間隔（分鐘，0 表示不自動查詢）",
-    "autoQueryInterval": "自動查詢間隔（分鐘）",
-    "autoQueryIntervalHint": "0 表示不自動查詢，建議 5-60 分鐘",
+    "autoIntervalMinutes": "自動查詢間隔（秒，0 表示不自動查詢）",
+    "autoQueryInterval": "自動查詢間隔（秒）",
+    "autoQueryIntervalHint": "0 表示不自動查詢，建議 300-3600 秒",
     "intervalMustBeInteger": "自動查詢間隔必須為整數，小數部分已忽略",
     "intervalCannotBeNegative": "自動查詢間隔不能為負數",
-    "intervalAdjusted": "自動查詢間隔已調整為 {{value}} 分鐘",
+    "intervalAdjusted": "自動查詢間隔已調整為 {{value}} 秒",
     "scriptHelp": "腳本編寫說明：",
     "configFormat": "設定格式：",
     "commentOptional": "選填",
@@ -2074,7 +2074,7 @@
     "usageApiKey": "用量 API Key",
     "usageBaseUrl": "用量查詢位址",
     "usageAutoInterval": "自動查詢",
-    "usageAutoIntervalValue": "每 {{minutes}} 分鐘"
+    "usageAutoIntervalValue": "每 {{seconds}} 秒"
   },
   "iconPicker": {
     "search": "搜尋圖示",

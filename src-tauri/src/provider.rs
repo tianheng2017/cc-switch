@@ -144,7 +144,7 @@ pub struct UsageScript {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "templateType")]
     pub template_type: Option<String>,
-    /// 自动查询间隔（单位：分钟，0 表示禁用自动查询）
+    /// 自动查询间隔（单位：秒，0 表示禁用自动查询）
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "autoQueryInterval")]
     pub auto_query_interval: Option<u64>,

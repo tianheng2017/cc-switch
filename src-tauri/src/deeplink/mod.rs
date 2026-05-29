@@ -132,7 +132,7 @@ pub struct DeepLinkImportRequest {
     /// Usage query user ID (for NewAPI template)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage_user_id: Option<String>,
-    /// Auto query interval in minutes (0 to disable)
+    /// Auto query interval in seconds (0 to disable)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage_auto_interval: Option<u64>,
 }

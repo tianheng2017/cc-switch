@@ -1399,12 +1399,12 @@
     "timeoutHint": "範囲: 2〜30 秒",
     "timeoutMustBeInteger": "タイムアウトは整数で入力してください（小数は切り捨て）",
     "timeoutCannotBeNegative": "タイムアウトは負の値にできません",
-    "autoIntervalMinutes": "自動照会間隔（分、0 で無効）",
-    "autoQueryInterval": "自動照会間隔（分）",
-    "autoQueryIntervalHint": "0 で無効。推奨 5〜60 分",
+    "autoIntervalMinutes": "自動照会間隔（秒、0 で無効）",
+    "autoQueryInterval": "自動照会間隔（秒）",
+    "autoQueryIntervalHint": "0 で無効。推奨 300〜3600 秒",
     "intervalMustBeInteger": "間隔は整数で入力してください（小数は切り捨て）",
     "intervalCannotBeNegative": "間隔は負の値にできません",
-    "intervalAdjusted": "間隔を {{value}} 分に調整しました",
+    "intervalAdjusted": "間隔を {{value}} 秒に調整しました",
     "scriptHelp": "スクリプトの書き方:",
     "configFormat": "設定の形式:",
     "commentOptional": "任意",
@@ -2128,7 +2128,7 @@
     "usageApiKey": "使用量 API キー",
     "usageBaseUrl": "使用量クエリ URL",
     "usageAutoInterval": "自動クエリ",
-    "usageAutoIntervalValue": "{{minutes}} 分ごと"
+    "usageAutoIntervalValue": "{{seconds}} 秒ごと"
   },
   "iconPicker": {
     "search": "アイコンを検索",
