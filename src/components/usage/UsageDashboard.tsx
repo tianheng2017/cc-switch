@@ -29,6 +29,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { PricingConfigPanel } from "@/components/usage/PricingConfigPanel";
+import { RouterTeamUsageIntervalPanel } from "@/components/usage/RouterTeamUsageIntervalPanel";
 import { cn } from "@/lib/utils";
 import { getLocaleFromLanguage } from "./format";
 import { getUsageRangePresetLabel, resolveUsageRange } from "@/lib/usageRange";
@@ -198,6 +199,25 @@ export function UsageDashboard() {
       </div>
 
       <Accordion type="multiple" defaultValue={[]} className="w-full space-y-4">
+        <AccordionItem
+          value="routerteam-usage-interval"
+          className="rounded-xl glass-card overflow-hidden"
+        >
+          <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-muted/50 data-[state=open]:bg-muted/50">
+            <div className="text-left">
+              <h3 className="text-base font-semibold">
+                {t("usage.routerTeamBatchInterval.title")}
+              </h3>
+              <p className="text-sm text-muted-foreground font-normal">
+                {t("usage.routerTeamBatchInterval.description")}
+              </p>
+            </div>
+          </AccordionTrigger>
+          <AccordionContent className="px-6 pb-6 pt-4 border-t border-border/50">
+            <RouterTeamUsageIntervalPanel />
+          </AccordionContent>
+        </AccordionItem>
+
         <AccordionItem
           value="pricing"
           className="rounded-xl glass-card overflow-hidden"

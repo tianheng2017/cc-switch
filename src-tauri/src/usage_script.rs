@@ -355,6 +355,48 @@ fn validate_single_usage(result: &Value) -> Result<(), AppError> {
             "remaining must be number or null",
         ));
     }
+    if obj.contains_key("windowRemainingQuota")
+        && !result["windowRemainingQuota"].is_null()
+        && !result["windowRemainingQuota"].is_number()
+    {
+        return Err(AppError::localized(
+            "usage_script.window_remaining_quota_type_error",
+            "windowRemainingQuota 必须是数字或 null",
+            "windowRemainingQuota must be number or null",
+        ));
+    }
+    if obj.contains_key("weeklyRemainingQuota")
+        && !result["weeklyRemainingQuota"].is_null()
+        && !result["weeklyRemainingQuota"].is_number()
+    {
+        return Err(AppError::localized(
+            "usage_script.weekly_remaining_quota_type_error",
+            "weeklyRemainingQuota 必须是数字或 null",
+            "weeklyRemainingQuota must be number or null",
+        ));
+    }
+    if obj.contains_key("cycleEndsAt")
+        && !result["cycleEndsAt"].is_null()
+        && !result["cycleEndsAt"].is_string()
+        && !result["cycleEndsAt"].is_number()
+    {
+        return Err(AppError::localized(
+            "usage_script.cycle_ends_at_type_error",
+            "cycleEndsAt 必须是字符串、数字或 null",
+            "cycleEndsAt must be string, number, or null",
+        ));
+    }
+    if obj.contains_key("windowEndsAt")
+        && !result["windowEndsAt"].is_null()
+        && !result["windowEndsAt"].is_string()
+        && !result["windowEndsAt"].is_number()
+    {
+        return Err(AppError::localized(
+            "usage_script.window_ends_at_type_error",
+            "windowEndsAt 必须是字符串、数字或 null",
+            "windowEndsAt must be string, number, or null",
+        ));
+    }
     if obj.contains_key("unit") && !result["unit"].is_null() && !result["unit"].is_string() {
         return Err(AppError::localized(
             "usage_script.unit_type_error",

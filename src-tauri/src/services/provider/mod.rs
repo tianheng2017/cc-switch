@@ -41,6 +41,7 @@ use live::{
     remove_opencode_provider_from_live, write_gemini_live,
 };
 use usage::validate_usage_script;
+pub(crate) use usage::{next_failover_provider_id, usage_result_failover_reason};
 
 /// Provider business logic service
 pub struct ProviderService;

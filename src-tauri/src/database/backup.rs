@@ -701,8 +701,26 @@ mod tests {
             let conn = crate::database::lock_conn!(remote_db.conn);
             conn.execute(
                 "INSERT INTO providers (id, app_type, name, settings_config, meta)
-                 VALUES ('remote-provider', 'claude', 'Remote Provider', '{}', '{}')",
-                [],
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    "remote-provider",
+                    "claude",
+                    "Remote Provider",
+                    "{}",
+                    serde_json::json!({
+                        "usage_script": {
+                            "enabled": true,
+                            "language": "javascript",
+                            "code": "({ request: { url: \"https://example.com/usage\", method: \"GET\" }, extractor: function (response) { return response; } })",
+                            "timeout": 10,
+                            "apiKey": "quota-token-123",
+                            "baseUrl": "https://example.com",
+                            "templateType": "general",
+                            "autoQueryInterval": 5
+                        }
+                    })
+                    .to_string(),
+                ],
             )?;
         }
         let remote_sql = remote_db.export_sql_string_for_sync()?;
@@ -753,6 +771,39 @@ mod tests {
         assert_eq!(
             remote_provider_exists, 1,
             "remote config should be imported"
+        );
+
+        let imported_provider = local_db
+            .get_provider_by_id("remote-provider", "claude")?
+            .expect("remote provider should be queryable after sync import");
+        let usage_script = imported_provider
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.usage_script.as_ref())
+            .expect("usage_script config should be synced through WebDAV snapshot");
+        assert!(
+            usage_script.enabled,
+            "usage_script enabled flag should survive sync"
+        );
+        assert_eq!(
+            usage_script.api_key.as_deref(),
+            Some("quota-token-123"),
+            "usage_script apiKey should survive sync"
+        );
+        assert_eq!(
+            usage_script.base_url.as_deref(),
+            Some("https://example.com"),
+            "usage_script baseUrl should survive sync"
+        );
+        assert_eq!(
+            usage_script.template_type.as_deref(),
+            Some("general"),
+            "usage_script templateType should survive sync"
+        );
+        assert_eq!(
+            usage_script.auto_query_interval,
+            Some(5),
+            "usage_script autoQueryInterval should survive sync"
         );
 
         let (request_logs, rollups, stream_logs): (i64, i64, i64) = {

@@ -542,6 +542,26 @@ pub fn run() {
                 Err(e) => log::warn!("✗ Failed to seed official providers: {e}"),
             }
 
+            match tauri::async_runtime::block_on(
+                crate::services::routerteam_usage_refresh::refresh_codex_routerteam_usage_scripts(
+                    app_state.db.as_ref(),
+                ),
+            ) {
+                Ok(count) if count > 0 => {
+                    log::info!(
+                        "✓ Refreshed RouterTeam Codex usage-script config for {count} provider(s)"
+                    );
+                }
+                Ok(_) => {
+                    log::debug!("○ No RouterTeam Codex providers required usage-script refresh");
+                }
+                Err(e) => {
+                    log::warn!(
+                        "✗ Failed to refresh RouterTeam Codex usage-script config on startup: {e}"
+                    );
+                }
+            }
+
             {
                 let db_for_codex_history_migration = app_state.db.clone();
                 tauri::async_runtime::spawn_blocking(move || {
@@ -1096,6 +1116,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_providers,
             commands::get_current_provider,
+            commands::bulk_update_routerteam_usage_query_interval,
             commands::add_provider,
             commands::update_provider,
             commands::delete_provider,

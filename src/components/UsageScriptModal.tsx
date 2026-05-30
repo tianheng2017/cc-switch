@@ -61,20 +61,6 @@ const generatePresetTemplates = (
 ): Record<string, string> => ({
   [TEMPLATE_TYPES.CUSTOM]: `({
   request: {
-    url: "",
-    method: "GET",
-    headers: {}
-  },
-  extractor: function(response) {
-    return {
-      remaining: 0,
-      unit: "USD"
-    };
-  }
-})`,
-
-  [TEMPLATE_TYPES.GENERAL]: `({
-  request: {
     url: "{{baseUrl}}/user/balance",
     method: "GET",
     headers: {
@@ -89,6 +75,30 @@ const generatePresetTemplates = (
       unit: "USD"
     };
   }
+})`,
+
+  [TEMPLATE_TYPES.GENERAL]: `({
+  request: {
+    url: "{{baseUrl}}/api/user/codex-free-quota/reminder",
+    method: "GET",
+    headers: {
+      Authorization: "Bearer {{apiKey}}",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36",
+    },
+  },
+  extractor: function (response) {
+    return {
+      isValid:
+        response.quota.windowRemainingQuota > 0.1 &&
+        response.quota.weeklyRemainingQuota > 0.1,
+      windowRemainingQuota: response.quota.windowRemainingQuota,
+      total: response.quota.windowLimit,
+      weeklyRemainingQuota: response.quota.weeklyRemainingQuota,
+      cycleEndsAt: response.quota.cycleEndsAt,
+      windowEndsAt: response.quota.windowEndsAt,
+    };
+  },
 })`,
 
   [TEMPLATE_TYPES.NEW_API]: `({
@@ -265,6 +275,10 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
   });
 
   const [testing, setTesting] = useState(false);
+  const resolvedUsageApiKey =
+    script.apiKey?.trim() || providerCredentials.apiKey;
+  const resolvedUsageBaseUrl =
+    script.baseUrl?.trim() || providerCredentials.baseUrl;
 
   // 🔧 失焦时的验证（严格）- 仅确保有效整数
   const validateTimeout = (value: string): number => {
@@ -332,7 +346,21 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
       if (existingScript?.accessToken || existingScript?.userId) {
         return TEMPLATE_TYPES.NEW_API;
       }
-      // 检测 GENERAL 模板（有 apiKey 或 baseUrl）
+      // 根据脚本内容优先识别新旧模板
+      if (
+        existingScript?.code?.includes(
+          "{{baseUrl}}/api/user/codex-free-quota/reminder",
+        ) ||
+        existingScript?.code?.includes(
+          "https://ai.router.team/api/user/codex-free-quota/reminder",
+        )
+      ) {
+        return TEMPLATE_TYPES.GENERAL;
+      }
+      if (existingScript?.code?.includes("{{baseUrl}}/user/balance")) {
+        return TEMPLATE_TYPES.CUSTOM;
+      }
+      // 兜底：有 apiKey 或 baseUrl 的旧配置默认按 GENERAL 处理
       if (existingScript?.apiKey || existingScript?.baseUrl) {
         return TEMPLATE_TYPES.GENERAL;
       }
@@ -421,6 +449,10 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
               formatUsageDataSummary(d, {
                 invalid: t("usage.invalid"),
                 remaining: t("usage.remaining"),
+                fiveHourRemaining: t("usage.fiveHourRemaining"),
+                weeklyRemainingQuota: t("usage.weeklyRemainingQuota"),
+                cycleEndsAt: t("usage.cycleEndsAt"),
+                windowEndsAt: t("usage.windowEndsAt"),
                 used: t("usage.used"),
               }),
             )
@@ -523,6 +555,10 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
             formatUsageDataSummary(plan, {
               invalid: t("usage.invalid"),
               remaining: t("usage.remaining"),
+              fiveHourRemaining: t("usage.fiveHourRemaining"),
+              weeklyRemainingQuota: t("usage.weeklyRemainingQuota"),
+              cycleEndsAt: t("usage.cycleEndsAt"),
+              windowEndsAt: t("usage.windowEndsAt"),
               used: t("usage.used"),
             }),
           )
@@ -583,15 +619,9 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
     const preset = PRESET_TEMPLATES[presetName];
     if (preset !== undefined) {
       if (presetName === TEMPLATE_TYPES.CUSTOM) {
-        // 🔧 自定义模式：用户应该在脚本中直接写完整 URL 和凭证，而不是依赖变量替换
-        // 这样可以避免同源检查导致的问题
-        // 如果用户想使用变量，需要手动在配置中设置 baseUrl/apiKey
         setScript({
           ...script,
           code: preset,
-          // 清除凭证，用户可选择手动输入或保持空
-          apiKey: undefined,
-          baseUrl: undefined,
           accessToken: undefined,
           userId: undefined,
         });
@@ -649,6 +679,7 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
   };
 
   const shouldShowCredentialsConfig =
+    selectedTemplate === TEMPLATE_TYPES.CUSTOM ||
     selectedTemplate === TEMPLATE_TYPES.GENERAL ||
     selectedTemplate === TEMPLATE_TYPES.NEW_API;
 
@@ -767,9 +798,9 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
                       {"{{baseUrl}}"}
                     </code>
                     <span className="text-muted-foreground/50">=</span>
-                    {providerCredentials.baseUrl ? (
+                    {resolvedUsageBaseUrl ? (
                       <code className="text-foreground/70 break-all font-mono">
-                        {providerCredentials.baseUrl}
+                        {resolvedUsageBaseUrl}
                       </code>
                     ) : (
                       <span className="text-muted-foreground/50 italic">
@@ -784,11 +815,11 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
                       {"{{apiKey}}"}
                     </code>
                     <span className="text-muted-foreground/50">=</span>
-                    {providerCredentials.apiKey ? (
+                    {resolvedUsageApiKey ? (
                       <>
                         {showApiKey ? (
                           <code className="text-foreground/70 break-all font-mono">
-                            {providerCredentials.apiKey}
+                            {resolvedUsageApiKey}
                           </code>
                         ) : (
                           <code className="text-foreground/70 font-mono">
@@ -902,7 +933,8 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
-                  {selectedTemplate === TEMPLATE_TYPES.GENERAL && (
+                  {(selectedTemplate === TEMPLATE_TYPES.CUSTOM ||
+                    selectedTemplate === TEMPLATE_TYPES.GENERAL) && (
                     <>
                       <div className="space-y-2">
                         <Label htmlFor="usage-api-key">
@@ -1171,7 +1203,10 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
   extractor: function(response) {
     return {
       isValid: !response.error,
-      remaining: response.balance,
+      windowRemainingQuota: response.windowRemainingQuota,
+      weeklyRemainingQuota: response.weeklyRemainingQuota,
+      windowEndsAt: response.windowEndsAt,
+      cycleEndsAt: response.cycleEndsAt,
       unit: "USD"
     };
   }
@@ -1185,6 +1220,10 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
                       <li>{t("usageScript.fieldIsValid")}</li>
                       <li>{t("usageScript.fieldInvalidMessage")}</li>
                       <li>{t("usageScript.fieldRemaining")}</li>
+                      <li>{t("usageScript.fieldWindowRemainingQuota")}</li>
+                      <li>{t("usageScript.fieldWeeklyRemainingQuota")}</li>
+                      <li>{t("usageScript.fieldWindowEndsAt")}</li>
+                      <li>{t("usageScript.fieldCycleEndsAt")}</li>
                       <li>{t("usageScript.fieldUnit")}</li>
                       <li>{t("usageScript.fieldPlanName")}</li>
                       <li>{t("usageScript.fieldTotal")}</li>

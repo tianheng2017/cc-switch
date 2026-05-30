@@ -58,8 +58,8 @@ export interface UsageScript {
   code: string; // 脚本代码（JSON 格式配置）
   timeout?: number; // 超时时间（秒，默认 10）
   templateType?: TemplateType; // 模板类型（用于后端判断验证规则）
-  apiKey?: string; // 用量查询专用的 API Key（通用模板使用）
-  baseUrl?: string; // 用量查询专用的 Base URL（通用和 NewAPI 模板使用）
+  apiKey?: string; // 用量查询专用的 API Key（自定义/通用模板使用）
+  baseUrl?: string; // 用量查询专用的 Base URL（自定义/通用/NewAPI 模板使用）
   accessToken?: string; // 访问令牌（NewAPI 模板使用）
   userId?: string; // 用户ID（NewAPI 模板使用）
   codingPlanProvider?: string; // Coding Plan 供应商标识（如 "kimi", "zhipu", "minimax"）
@@ -96,7 +96,11 @@ export interface UsageData {
   invalidMessage?: string; // 失效原因说明（可选，当 isValid 为 false 时显示）
   total?: number; // 总额度（可选）
   used?: number; // 已用额度（可选）
-  remaining?: number; // 剩余额度（可选）
+  remaining?: number; // 通用剩余额度（可选）
+  windowRemainingQuota?: number; // 5小时剩余额度（可选）
+  weeklyRemainingQuota?: number; // 本周剩余额度（可选）
+  cycleEndsAt?: string | number; // 7 日重置时间（可选）
+  windowEndsAt?: string | number; // 5小时重置时间（可选）
   unit?: string; // 单位（可选）
 }
 
@@ -105,6 +109,8 @@ export interface UsageResult {
   success: boolean;
   data?: UsageData[]; // 改为数组，支持返回多个套餐
   error?: string;
+  accountBalance?: number; // 供应商账户余额（可选）
+  accountBalanceFailed?: boolean; // 账户余额查询是否失败（可选）
 }
 
 // 供应商单独的模型测试配置

@@ -94,6 +94,8 @@ mod tests {
             success: true,
             data: None,
             error: None,
+            account_balance: None,
+            account_balance_failed: None,
         }
     }
 

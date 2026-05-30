@@ -175,6 +175,18 @@ pub struct UsageData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub remaining: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "windowRemainingQuota")]
+    pub window_remaining_quota: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "weeklyRemainingQuota")]
+    pub weekly_remaining_quota: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "cycleEndsAt")]
+    pub cycle_ends_at: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "windowEndsAt")]
+    pub window_ends_at: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub unit: Option<String>,
 }
 
@@ -186,6 +198,12 @@ pub struct UsageResult {
     pub data: Option<Vec<UsageData>>, // 支持返回多个套餐
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "accountBalance")]
+    pub account_balance: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "accountBalanceFailed")]
+    pub account_balance_failed: Option<bool>,
 }
 
 /// 供应商单独的模型测试配置

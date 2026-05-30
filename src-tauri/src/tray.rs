@@ -1014,6 +1014,10 @@ mod tests {
             total: Some(100.0),
             used: Some(utilization),
             remaining: Some(100.0 - utilization),
+            window_remaining_quota: None,
+            weekly_remaining_quota: None,
+            cycle_ends_at: None,
+            window_ends_at: None,
             unit: Some("%".to_string()),
         }
     }
@@ -1023,6 +1027,8 @@ mod tests {
             success,
             data: if data.is_empty() { None } else { Some(data) },
             error: None,
+            account_balance: None,
+            account_balance_failed: None,
         }
     }
 

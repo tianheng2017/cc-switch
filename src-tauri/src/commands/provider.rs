@@ -16,6 +16,122 @@ const TEMPLATE_TYPE_GITHUB_COPILOT: &str = "github_copilot";
 const TEMPLATE_TYPE_TOKEN_PLAN: &str = "token_plan";
 const TEMPLATE_TYPE_BALANCE: &str = "balance";
 const COPILOT_UNIT_PREMIUM: &str = "requests";
+const ROUTERTEAM_NAME_MARKER: &str = "RouterTeam";
+
+fn apply_routerteam_usage_interval(provider: &mut Provider, interval_secs: u64) -> bool {
+    if !provider.name.contains(ROUTERTEAM_NAME_MARKER) {
+        return false;
+    }
+
+    let Some(meta) = provider.meta.as_mut() else {
+        return false;
+    };
+    let Some(usage_script) = meta.usage_script.as_mut() else {
+        return false;
+    };
+
+    if usage_script.auto_query_interval == Some(interval_secs) {
+        return false;
+    }
+
+    usage_script.auto_query_interval = Some(interval_secs);
+    true
+}
+
+async fn maybe_failover_on_usage_guard(
+    app_handle: &tauri::AppHandle,
+    state: &AppState,
+    app_type: &AppType,
+    provider_id: &str,
+    result: &crate::provider::UsageResult,
+) -> Result<(), AppError> {
+    if !matches!(app_type, AppType::Claude | AppType::Codex | AppType::Gemini) {
+        return Ok(());
+    }
+
+    let Some(failover_reason) = crate::services::provider::usage_result_failover_reason(result)
+    else {
+        return Ok(());
+    };
+
+    let config = state.db.get_proxy_config_for_app(app_type.as_str()).await?;
+    if !config.auto_failover_enabled {
+        return Ok(());
+    }
+
+    let current_provider_id = crate::settings::get_effective_current_provider(&state.db, app_type)?
+        .or_else(|| {
+            state
+                .db
+                .get_current_provider(app_type.as_str())
+                .ok()
+                .flatten()
+        });
+
+    if current_provider_id.as_deref() != Some(provider_id) {
+        log::debug!(
+            "[UsageFailover] 忽略过期结果: app={}, queried={}, current={:?}",
+            app_type.as_str(),
+            provider_id,
+            current_provider_id
+        );
+        return Ok(());
+    }
+
+    let queue = state.db.get_failover_queue(app_type.as_str())?;
+    let Some(next_provider_id) =
+        crate::services::provider::next_failover_provider_id(&queue, provider_id)
+    else {
+        log::warn!(
+            "[UsageFailover] {} 的供应商 {} 触发故障转移条件（{}），但故障转移队列中没有后继项",
+            app_type.as_str(),
+            provider_id,
+            failover_reason
+        );
+        return Ok(());
+    };
+
+    let Some(next_provider) = state
+        .db
+        .get_provider_by_id(&next_provider_id, app_type.as_str())?
+    else {
+        log::warn!(
+            "[UsageFailover] {} 的下一个故障转移供应商不存在: {}",
+            app_type.as_str(),
+            next_provider_id
+        );
+        return Ok(());
+    };
+
+    let switched = state
+        .failover_switch_manager
+        .try_switch(
+            Some(app_handle),
+            app_type.as_str(),
+            &next_provider.id,
+            &next_provider.name,
+        )
+        .await?;
+
+    if switched {
+        log::info!(
+            "[UsageFailover] {} 的供应商 {} 触发故障转移条件（{}），已立即切换到 {}",
+            app_type.as_str(),
+            provider_id,
+            failover_reason,
+            next_provider.id
+        );
+    } else {
+        log::debug!(
+            "[UsageFailover] {} 的供应商 {} 触发故障转移条件（{}），但切换被跳过或目标已对齐",
+            app_type.as_str(),
+            provider_id,
+            failover_reason
+        );
+    }
+
+    Ok(())
+}
 
 /// 获取所有供应商
 #[tauri::command]
@@ -31,6 +147,44 @@ pub fn get_providers(
 pub fn get_current_provider(state: State<'_, AppState>, app: String) -> Result<String, String> {
     let app_type = AppType::from_str(&app).map_err(|e| e.to_string())?;
     ProviderService::current(state.inner(), app_type).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn bulk_update_routerteam_usage_query_interval(
+    state: State<'_, AppState>,
+    interval_secs: u64,
+) -> Result<usize, String> {
+    if interval_secs > 86_400 {
+        return Err("自动查询间隔不能超过 86400 秒".to_string());
+    }
+
+    let mut updated = 0usize;
+
+    for app_type in AppType::all() {
+        let providers = state
+            .db
+            .get_all_providers(app_type.as_str())
+            .map_err(|e| format!("Failed to get providers for {}: {e}", app_type.as_str()))?;
+
+        for (_, mut provider) in providers {
+            if !apply_routerteam_usage_interval(&mut provider, interval_secs) {
+                continue;
+            }
+            state
+                .db
+                .save_provider(app_type.as_str(), &provider)
+                .map_err(|e| {
+                    format!(
+                        "Failed to save provider '{}' for {}: {e}",
+                        provider.name,
+                        app_type.as_str()
+                    )
+                })?;
+            updated += 1;
+        }
+    }
+
+    Ok(updated)
 }
 
 #[tauri::command]
@@ -376,12 +530,32 @@ pub async fn queryProviderUsage(
     // 同时保持原始 Err 返回给前端 React Query 的 onError 回调，不吞错误。
     let inner =
         query_provider_usage_inner(&state, &copilot_state, app_type.clone(), &providerId).await;
+    if let Ok(result) = &inner {
+        if let Err(e) = maybe_failover_on_usage_guard(
+            &app_handle,
+            state.inner(),
+            &app_type,
+            &providerId,
+            result,
+        )
+        .await
+        {
+            log::warn!(
+                "[UsageFailover] 处理 {}:{} 的用量故障转移失败: {}",
+                app_type.as_str(),
+                providerId,
+                e
+            );
+        }
+    }
     let snapshot = match &inner {
         Ok(r) => r.clone(),
         Err(err_msg) => crate::provider::UsageResult {
             success: false,
             data: None,
             error: Some(err_msg.clone()),
+            account_balance: None,
+            account_balance_failed: None,
         },
     };
     let payload = serde_json::json!({
@@ -444,12 +618,18 @@ async fn query_provider_usage_inner(
                 remaining: Some(premium.remaining as f64),
                 total: Some(premium.entitlement as f64),
                 used: Some(used as f64),
+                window_remaining_quota: None,
+                weekly_remaining_quota: None,
+                cycle_ends_at: None,
+                window_ends_at: None,
                 unit: Some(COPILOT_UNIT_PREMIUM.to_string()),
                 is_valid: Some(true),
                 invalid_message: None,
                 extra: Some(format!("Reset: {}", usage.quota_reset_date)),
             }]),
             error: None,
+            account_balance: None,
+            account_balance_failed: None,
         });
     }
 
@@ -483,6 +663,8 @@ async fn query_provider_usage_inner(
                 success: false,
                 data: None,
                 error: quota.error,
+                account_balance: None,
+                account_balance_failed: None,
             });
         }
 
@@ -498,6 +680,10 @@ async fn query_provider_usage_inner(
                     remaining: Some(remaining),
                     total: Some(total),
                     used: Some(used),
+                    window_remaining_quota: None,
+                    weekly_remaining_quota: None,
+                    cycle_ends_at: None,
+                    window_ends_at: None,
                     unit: Some("%".to_string()),
                     is_valid: Some(true),
                     invalid_message: None,
@@ -510,6 +696,8 @@ async fn query_provider_usage_inner(
             success: true,
             data: if data.is_empty() { None } else { Some(data) },
             error: None,
+            account_balance: None,
+            account_balance_failed: None,
         });
     }
 
@@ -742,6 +930,73 @@ pub fn get_opencode_live_provider_ids() -> Result<Vec<String>, String> {
 // ============================================================================
 // OpenClaw 专属命令 → 已迁移至 commands/openclaw.rs
 // ============================================================================
+
+#[cfg(test)]
+mod routerteam_usage_interval_tests {
+    use super::apply_routerteam_usage_interval;
+    use crate::provider::{Provider, ProviderMeta, UsageScript};
+    use serde_json::json;
+
+    fn make_provider(name: &str, auto_interval: Option<u64>) -> Provider {
+        let mut provider = Provider::with_id(
+            format!("provider-{name}"),
+            name.to_string(),
+            json!({ "auth": {}, "config": "" }),
+            None,
+        );
+        provider.meta = Some(ProviderMeta {
+            usage_script: Some(UsageScript {
+                enabled: true,
+                language: "javascript".to_string(),
+                code: "({})".to_string(),
+                timeout: Some(10),
+                api_key: None,
+                base_url: None,
+                access_token: None,
+                user_id: None,
+                template_type: Some("general".to_string()),
+                auto_query_interval: auto_interval,
+                coding_plan_provider: None,
+            }),
+            ..ProviderMeta::default()
+        });
+        provider
+    }
+
+    #[test]
+    fn apply_routerteam_usage_interval_updates_matching_provider() {
+        let mut provider = make_provider("RouterTeam-demo@example.com", Some(5));
+
+        let updated = apply_routerteam_usage_interval(&mut provider, 30);
+
+        assert!(updated);
+        assert_eq!(
+            provider
+                .meta
+                .as_ref()
+                .and_then(|meta| meta.usage_script.as_ref())
+                .and_then(|script| script.auto_query_interval),
+            Some(30)
+        );
+    }
+
+    #[test]
+    fn apply_routerteam_usage_interval_ignores_non_matching_provider() {
+        let mut provider = make_provider("OtherProvider", Some(5));
+
+        let updated = apply_routerteam_usage_interval(&mut provider, 30);
+
+        assert!(!updated);
+        assert_eq!(
+            provider
+                .meta
+                .as_ref()
+                .and_then(|meta| meta.usage_script.as_ref())
+                .and_then(|script| script.auto_query_interval),
+            Some(5)
+        );
+    }
+}
 
 #[cfg(test)]
 mod import_claude_desktop_tests {

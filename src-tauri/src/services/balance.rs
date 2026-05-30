@@ -41,6 +41,8 @@ fn make_error(msg: String) -> UsageResult {
         success: false,
         data: None,
         error: Some(msg),
+        account_balance: None,
+        account_balance_failed: None,
     }
 }
 
@@ -52,12 +54,18 @@ fn make_auth_error(status: reqwest::StatusCode) -> UsageResult {
             remaining: None,
             total: None,
             used: None,
+            window_remaining_quota: None,
+            weekly_remaining_quota: None,
+            cycle_ends_at: None,
+            window_ends_at: None,
             unit: None,
             is_valid: Some(false),
             invalid_message: Some(format!("Authentication failed (HTTP {status})")),
             extra: None,
         }]),
         error: Some(format!("Authentication failed (HTTP {status})")),
+        account_balance: None,
+        account_balance_failed: None,
     }
 }
 
@@ -114,6 +122,10 @@ async fn query_deepseek(api_key: &str) -> UsageResult {
                 remaining: total,
                 total: None,
                 used: None,
+                window_remaining_quota: None,
+                weekly_remaining_quota: None,
+                cycle_ends_at: None,
+                window_ends_at: None,
                 unit: Some(currency.to_string()),
                 is_valid: Some(is_available),
                 invalid_message: if !is_available {
@@ -130,6 +142,8 @@ async fn query_deepseek(api_key: &str) -> UsageResult {
         success: true,
         data: if data.is_empty() { None } else { Some(data) },
         error: None,
+        account_balance: None,
+        account_balance_failed: None,
     }
 }
 
@@ -176,12 +190,18 @@ async fn query_stepfun(api_key: &str) -> UsageResult {
             remaining: Some(balance),
             total: None,
             used: None,
+            window_remaining_quota: None,
+            weekly_remaining_quota: None,
+            cycle_ends_at: None,
+            window_ends_at: None,
             unit: Some("CNY".to_string()),
             is_valid: Some(true),
             invalid_message: None,
             extra: None,
         }]),
         error: None,
+        account_balance: None,
+        account_balance_failed: None,
     }
 }
 
@@ -247,12 +267,18 @@ async fn query_siliconflow(api_key: &str, is_cn: bool) -> UsageResult {
             remaining: Some(total_balance),
             total: None,
             used: None,
+            window_remaining_quota: None,
+            weekly_remaining_quota: None,
+            cycle_ends_at: None,
+            window_ends_at: None,
             unit: Some(unit.to_string()),
             is_valid: Some(true),
             invalid_message: None,
             extra: None,
         }]),
         error: None,
+        account_balance: None,
+        account_balance_failed: None,
     }
 }
 
@@ -302,6 +328,10 @@ async fn query_openrouter(api_key: &str) -> UsageResult {
             remaining: Some(remaining),
             total: Some(total_credits),
             used: Some(total_usage),
+            window_remaining_quota: None,
+            weekly_remaining_quota: None,
+            cycle_ends_at: None,
+            window_ends_at: None,
             unit: Some("USD".to_string()),
             is_valid: Some(remaining > 0.0),
             invalid_message: if remaining <= 0.0 {
@@ -312,6 +342,8 @@ async fn query_openrouter(api_key: &str) -> UsageResult {
             extra: None,
         }]),
         error: None,
+        account_balance: None,
+        account_balance_failed: None,
     }
 }
 
@@ -360,6 +392,10 @@ async fn query_novita(api_key: &str) -> UsageResult {
             remaining: Some(available),
             total: None,
             used: None,
+            window_remaining_quota: None,
+            weekly_remaining_quota: None,
+            cycle_ends_at: None,
+            window_ends_at: None,
             unit: Some("USD".to_string()),
             is_valid: Some(available > 0.0),
             invalid_message: if available <= 0.0 {
@@ -370,6 +406,8 @@ async fn query_novita(api_key: &str) -> UsageResult {
             extra: None,
         }]),
         error: None,
+        account_balance: None,
+        account_balance_failed: None,
     }
 }
 
@@ -391,6 +429,8 @@ pub async fn get_balance(base_url: &str, api_key: &str) -> Result<UsageResult, S
             success: false,
             data: None,
             error: Some("API key is empty".to_string()),
+            account_balance: None,
+            account_balance_failed: None,
         });
     }
 
@@ -401,6 +441,8 @@ pub async fn get_balance(base_url: &str, api_key: &str) -> Result<UsageResult, S
                 success: false,
                 data: None,
                 error: Some("Unknown balance provider".to_string()),
+                account_balance: None,
+                account_balance_failed: None,
             })
         }
     };
@@ -415,4 +457,34 @@ pub async fn get_balance(base_url: &str, api_key: &str) -> Result<UsageResult, S
     };
 
     Ok(result)
+}
+
+pub async fn get_routerteam_cc_switch_balance(api_key: &str) -> Result<f64, String> {
+    if api_key.trim().is_empty() {
+        return Err("API key is empty".to_string());
+    }
+
+    let client = crate::proxy::http_client::get();
+    let resp = client
+        .get("https://ai.router.team/api/public/cc-switch/balance")
+        .query(&[("apikey", api_key)])
+        .header("Accept", "application/json")
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {e}"))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("API error (HTTP {status}): {body}"));
+    }
+
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {e}"))?;
+
+    parse_f64_field(&body, "balance")
+        .ok_or_else(|| "Missing 'balance' field in response".to_string())
 }

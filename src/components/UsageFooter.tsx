@@ -6,6 +6,11 @@ import { useUsageQuery } from "@/lib/query/queries";
 import { UsageData, Provider } from "@/types";
 import { TierBadge } from "@/components/SubscriptionQuotaFooter";
 import type { QuotaTier } from "@/types/subscription";
+import {
+  formatUsageResetTime,
+  getWeeklyRemainingQuota,
+  getWindowRemainingQuota,
+} from "@/utils/usageDisplay";
 
 interface UsageFooterProps {
   provider: Provider;
@@ -25,6 +30,104 @@ function toQuotaTier(data: UsageData): QuotaTier {
     resetsAt: data.extra || null,
   };
 }
+
+function remainingLabel(data: UsageData, t: (key: string) => string): string {
+  return getWindowRemainingQuota(data) !== undefined
+    ? t("usage.fiveHourRemaining")
+    : t("usage.remaining");
+}
+
+function usageValueClass(data: UsageData): string {
+  const remaining = getWindowRemainingQuota(data) ?? data.remaining;
+
+  if (data.isValid === false) {
+    return "text-red-500 dark:text-red-400";
+  }
+
+  if (
+    remaining !== undefined &&
+    remaining < (data.total || remaining) * 0.1
+  ) {
+    return "text-orange-500 dark:text-orange-400";
+  }
+
+  return "text-green-600 dark:text-green-400";
+}
+
+function formatMetricValue(value: number): string {
+  return Number.isInteger(value) ? value.toString() : value.toFixed(2);
+}
+
+const AccountBalanceMetric: React.FC<{
+  balance?: number;
+  failed?: boolean;
+}> = ({ balance, failed = false }) => {
+  const { t } = useTranslation();
+
+  if (balance === undefined && !failed) {
+    return null;
+  }
+
+  return (
+    <div className="flex items-center gap-0.5">
+      <span className="text-gray-500 dark:text-gray-400">
+        {t("usage.accountBalance")}
+      </span>
+      <span
+        className={`font-medium tabular-nums ${
+          failed
+            ? "text-red-500 dark:text-red-400"
+            : "text-green-600 dark:text-green-400"
+        }`}
+      >
+        {failed ? t("usage.queryFailed") : formatMetricValue(balance!)}
+      </span>
+    </div>
+  );
+};
+
+const ResetTimeRows: React.FC<{ data: UsageData; align?: "end" | "start" }> = ({
+  data,
+  align = "start",
+}) => {
+  const { t } = useTranslation();
+  const windowEndsAt = formatUsageResetTime(data.windowEndsAt);
+  const cycleEndsAt = formatUsageResetTime(data.cycleEndsAt);
+  const valueClass = usageValueClass(data);
+
+  if (!windowEndsAt && !cycleEndsAt) {
+    return null;
+  }
+
+  return (
+    <div
+      className={`flex flex-col gap-0.5 text-xs text-gray-500 dark:text-gray-400 ${
+        align === "end" ? "items-end" : "items-start"
+      }`}
+    >
+      {windowEndsAt && (
+        <span className="whitespace-nowrap">
+          <span className="text-gray-500 dark:text-gray-400">
+            {t("usage.windowEndsAt")}
+          </span>
+          <span className={`font-medium tabular-nums ${valueClass}`}>
+            {windowEndsAt}
+          </span>
+        </span>
+      )}
+      {cycleEndsAt && (
+        <span className="whitespace-nowrap">
+          <span className="text-gray-500 dark:text-gray-400">
+            {t("usage.cycleEndsAt")}
+          </span>
+          <span className={`font-medium tabular-nums ${valueClass}`}>
+            {cycleEndsAt}
+          </span>
+        </span>
+      )}
+    </div>
+  );
+};
 
 const UsageFooter: React.FC<UsageFooterProps> = ({
   provider,
@@ -73,11 +176,21 @@ const UsageFooter: React.FC<UsageFooterProps> = ({
   // 只在启用用量查询且有数据时显示
   if (!usageEnabled || !usage) return null;
 
+  const accountBalance = usage.accountBalance;
+  const accountBalanceFailed = usage.accountBalanceFailed === true;
+
   // 错误状态
   if (!usage.success) {
     if (inline) {
       return (
         <div className="inline-flex items-center gap-2 text-xs rounded-lg border border-border-default bg-card px-3 py-2 shadow-sm">
+          <AccountBalanceMetric
+            balance={accountBalance}
+            failed={accountBalanceFailed}
+          />
+          {(accountBalance !== undefined || accountBalanceFailed) && (
+            <span className="text-gray-400 dark:text-gray-600">|</span>
+          )}
           <div className="flex items-center gap-1.5 text-red-500 dark:text-red-400">
             <AlertCircle size={12} />
             <span>{t("usage.queryFailed")}</span>
@@ -97,9 +210,18 @@ const UsageFooter: React.FC<UsageFooterProps> = ({
     return (
       <div className="mt-3 rounded-xl border border-border-default bg-card px-4 py-3 shadow-sm">
         <div className="flex items-center justify-between gap-2 text-xs">
-          <div className="flex items-center gap-2 text-red-500 dark:text-red-400">
-            <AlertCircle size={14} />
-            <span>{usage.error || t("usage.queryFailed")}</span>
+          <div className="flex items-center gap-2 min-w-0">
+            <AccountBalanceMetric
+              balance={accountBalance}
+              failed={accountBalanceFailed}
+            />
+            {(accountBalance !== undefined || accountBalanceFailed) && (
+              <span className="text-gray-400 dark:text-gray-600">|</span>
+            )}
+            <div className="flex items-center gap-1.5 text-red-500 dark:text-red-400">
+              <AlertCircle size={14} />
+              <span>{usage.error || t("usage.queryFailed")}</span>
+            </div>
           </div>
 
           {/* 刷新按钮 */}
@@ -158,7 +280,10 @@ const UsageFooter: React.FC<UsageFooterProps> = ({
   // ── 通用用量：内联模式（原有逻辑） ──
   if (inline) {
     const firstUsage = usageDataList[0];
-    const isExpired = firstUsage.isValid === false;
+    const windowRemainingQuota = getWindowRemainingQuota(firstUsage);
+    const weeklyRemainingQuota = getWeeklyRemainingQuota(firstUsage);
+    const remaining = windowRemainingQuota ?? firstUsage.remaining;
+    const accentClass = usageValueClass(firstUsage);
 
     return (
       <div className="flex flex-col items-end gap-1 text-xs whitespace-nowrap flex-shrink-0">
@@ -200,23 +325,31 @@ const UsageFooter: React.FC<UsageFooterProps> = ({
             </div>
           )}
 
+          <AccountBalanceMetric
+            balance={accountBalance}
+            failed={accountBalanceFailed}
+          />
+
           {/* 剩余 */}
-          {firstUsage.remaining !== undefined && (
+          {remaining !== undefined && (
             <div className="flex items-center gap-0.5">
               <span className="text-gray-500 dark:text-gray-400">
-                {t("usage.remaining")}
+                {remainingLabel(firstUsage, t)}
               </span>
-              <span
-                className={`font-semibold tabular-nums ${
-                  isExpired
-                    ? "text-red-500 dark:text-red-400"
-                    : firstUsage.remaining <
-                        (firstUsage.total || firstUsage.remaining) * 0.1
-                      ? "text-orange-500 dark:text-orange-400"
-                      : "text-green-600 dark:text-green-400"
-                }`}
-              >
-                {firstUsage.remaining.toFixed(2)}
+              <span className={`font-semibold tabular-nums ${accentClass}`}>
+                {remaining.toFixed(2)}
+              </span>
+            </div>
+          )}
+
+          {/* 本周剩余 */}
+          {weeklyRemainingQuota !== undefined && (
+            <div className="flex items-center gap-0.5">
+              <span className="text-gray-500 dark:text-gray-400">
+                {t("usage.weeklyRemainingQuota")}
+              </span>
+              <span className={`font-medium tabular-nums ${accentClass}`}>
+                {weeklyRemainingQuota.toFixed(2)}
               </span>
             </div>
           )}
@@ -238,6 +371,7 @@ const UsageFooter: React.FC<UsageFooterProps> = ({
             </span>
           )}
         </div>
+        <ResetTimeRows data={firstUsage} align="end" />
       </div>
     );
   }
@@ -246,9 +380,15 @@ const UsageFooter: React.FC<UsageFooterProps> = ({
     <div className="mt-3 rounded-xl border border-border-default bg-card px-4 py-3 shadow-sm">
       {/* 标题行：包含刷新按钮和自动查询时间 */}
       <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
-          {t("usage.planUsage")}
-        </span>
+        <div className="flex items-center gap-3 min-w-0">
+          <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">
+            {t("usage.planUsage")}
+          </span>
+          <AccountBalanceMetric
+            balance={accountBalance}
+            failed={accountBalanceFailed}
+          />
+        </div>
         <div className="flex items-center gap-2">
           {/* 自动查询时间提示 */}
           {lastQueriedAt && (
@@ -283,114 +423,116 @@ const UsageFooter: React.FC<UsageFooterProps> = ({
 // 单个套餐数据展示组件
 const UsagePlanItem: React.FC<{ data: UsageData }> = ({ data }) => {
   const { t } = useTranslation();
-  const {
-    planName,
-    extra,
-    isValid,
-    invalidMessage,
-    total,
-    used,
-    remaining,
-    unit,
-  } = data;
+  const { planName, extra, isValid, invalidMessage, total, used, unit } = data;
+  const windowRemainingQuota = getWindowRemainingQuota(data);
+  const weeklyRemainingQuota = getWeeklyRemainingQuota(data);
+  const remaining = windowRemainingQuota ?? data.remaining;
+  const accentClass = usageValueClass(data);
 
   // 判断套餐是否失效（isValid 为 false 或未定义时视为有效）
   const isExpired = isValid === false;
 
   return (
-    <div className="flex items-center gap-3">
-      {/* 标题部分：25% */}
-      <div
-        className="text-xs text-gray-500 dark:text-gray-400 min-w-0"
-        style={{ width: "25%" }}
-      >
-        {planName ? (
-          <span
-            className={`font-medium truncate block ${isExpired ? "text-red-500 dark:text-red-400" : ""}`}
-            title={planName}
-          >
-            💰 {planName}
-          </span>
-        ) : (
-          <span className="opacity-50">—</span>
-        )}
-      </div>
-
-      {/* 扩展字段：30% */}
-      <div
-        className="text-xs text-gray-500 dark:text-gray-400 min-w-0 flex items-center gap-2"
-        style={{ width: "30%" }}
-      >
-        {extra && (
-          <span
-            className={`truncate ${isExpired ? "text-red-500 dark:text-red-400" : ""}`}
-            title={extra}
-          >
-            {extra}
-          </span>
-        )}
-        {isExpired && (
-          <span className="text-red-500 dark:text-red-400 font-medium text-[10px] px-1.5 py-0.5 bg-red-50 dark:bg-red-900/20 rounded flex-shrink-0">
-            {invalidMessage || t("usage.invalid")}
-          </span>
-        )}
-      </div>
-
-      {/* 用量信息：45% */}
-      <div
-        className="flex items-center justify-end gap-2 text-xs flex-shrink-0"
-        style={{ width: "45%" }}
-      >
-        {/* 总额度 */}
-        {total !== undefined && (
-          <>
-            <span className="text-gray-500 dark:text-gray-400">
-              {t("usage.total")}
-            </span>
-            <span className="tabular-nums text-gray-600 dark:text-gray-400">
-              {total === -1 ? "∞" : total.toFixed(2)}
-            </span>
-            <span className="text-gray-400 dark:text-gray-600">|</span>
-          </>
-        )}
-
-        {/* 已用额度 */}
-        {used !== undefined && (
-          <>
-            <span className="text-gray-500 dark:text-gray-400">
-              {t("usage.used")}
-            </span>
-            <span className="tabular-nums text-gray-600 dark:text-gray-400">
-              {used.toFixed(2)}
-            </span>
-            <span className="text-gray-400 dark:text-gray-600">|</span>
-          </>
-        )}
-
-        {/* 剩余额度 - 突出显示 */}
-        {remaining !== undefined && (
-          <>
-            <span className="text-gray-500 dark:text-gray-400">
-              {t("usage.remaining")}
-            </span>
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-3">
+        {/* 标题部分：25% */}
+        <div
+          className="text-xs text-gray-500 dark:text-gray-400 min-w-0"
+          style={{ width: "25%" }}
+        >
+          {planName ? (
             <span
-              className={`font-semibold tabular-nums ${
-                isExpired
-                  ? "text-red-500 dark:text-red-400"
-                  : remaining < (total || remaining) * 0.1
-                    ? "text-orange-500 dark:text-orange-400"
-                    : "text-green-600 dark:text-green-400"
-              }`}
+              className={`font-medium truncate block ${isExpired ? "text-red-500 dark:text-red-400" : ""}`}
+              title={planName}
             >
-              {remaining.toFixed(2)}
+              💰 {planName}
             </span>
-          </>
-        )}
+          ) : (
+            <span className="opacity-50">—</span>
+          )}
+        </div>
 
-        {unit && (
-          <span className="text-gray-500 dark:text-gray-400">{unit}</span>
-        )}
+        {/* 扩展字段：30% */}
+        <div
+          className="text-xs text-gray-500 dark:text-gray-400 min-w-0 flex items-center gap-2"
+          style={{ width: "30%" }}
+        >
+          {extra && (
+            <span
+              className={`truncate ${isExpired ? "text-red-500 dark:text-red-400" : ""}`}
+              title={extra}
+            >
+              {extra}
+            </span>
+          )}
+          {isExpired && (
+            <span className="text-red-500 dark:text-red-400 font-medium text-[10px] px-1.5 py-0.5 bg-red-50 dark:bg-red-900/20 rounded flex-shrink-0">
+              {invalidMessage || t("usage.invalid")}
+            </span>
+          )}
+        </div>
+
+        {/* 用量信息：45% */}
+        <div
+          className="flex items-center justify-end gap-2 text-xs flex-shrink-0"
+          style={{ width: "45%" }}
+        >
+          {/* 总额度 */}
+          {total !== undefined && (
+            <>
+              <span className="text-gray-500 dark:text-gray-400">
+                {t("usage.total")}
+              </span>
+              <span className="tabular-nums text-gray-600 dark:text-gray-400">
+                {total === -1 ? "∞" : total.toFixed(2)}
+              </span>
+              <span className="text-gray-400 dark:text-gray-600">|</span>
+            </>
+          )}
+
+          {/* 已用额度 */}
+          {used !== undefined && (
+            <>
+              <span className="text-gray-500 dark:text-gray-400">
+                {t("usage.used")}
+              </span>
+              <span className="tabular-nums text-gray-600 dark:text-gray-400">
+                {used.toFixed(2)}
+              </span>
+              <span className="text-gray-400 dark:text-gray-600">|</span>
+            </>
+          )}
+
+          {/* 剩余额度 - 突出显示 */}
+          {remaining !== undefined && (
+            <>
+              <span className="text-gray-500 dark:text-gray-400">
+                {remainingLabel(data, t)}
+              </span>
+              <span className={`font-semibold tabular-nums ${accentClass}`}>
+                {remaining.toFixed(2)}
+              </span>
+            </>
+          )}
+
+          {weeklyRemainingQuota !== undefined && (
+            <>
+              <span className="text-gray-400 dark:text-gray-600">|</span>
+              <span className="text-gray-500 dark:text-gray-400">
+                {t("usage.weeklyRemainingQuota")}
+              </span>
+              <span className={`font-medium tabular-nums ${accentClass}`}>
+                {weeklyRemainingQuota.toFixed(2)}
+              </span>
+            </>
+          )}
+
+          {unit && (
+            <span className="text-gray-500 dark:text-gray-400">{unit}</span>
+          )}
+        </div>
       </div>
+      <ResetTimeRows data={data} />
     </div>
   );
 };

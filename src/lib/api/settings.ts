@@ -239,6 +239,14 @@ export const settingsApi = {
   async setLogConfig(config: LogConfig): Promise<boolean> {
     return await invoke("set_log_config", { config });
   },
+
+  async bulkUpdateRouterTeamUsageQueryInterval(
+    intervalSecs: number,
+  ): Promise<number> {
+    return await invoke("bulk_update_routerteam_usage_query_interval", {
+      intervalSecs,
+    });
+  },
 };
 
 /** 单处工具安装的诊断信息（多处安装冲突检测）。字段对应后端 ToolInstallation。 */
