@@ -12,8 +12,6 @@ use crate::usage_script;
 
 const ROUTERTEAM_BASE_URL: &str = "https://ai.router.team";
 const ROUTERTEAM_QUOTA_PATH: &str = "/api/user/codex-free-quota/reminder";
-const FAILOVER_MIN_ACCOUNT_BALANCE: f64 = 0.1;
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum RouterTeamAccountBalanceOutcome {
     NotApplicable,
@@ -113,20 +111,7 @@ pub(crate) fn usage_result_failover_reason(result: &UsageResult) -> Option<&'sta
         })
         .unwrap_or((false, false));
 
-    let invalid_only = saw_invalid && !saw_non_invalid;
-    let account_balance_failed = result.account_balance_failed == Some(true);
-    let low_balance = result
-        .account_balance
-        .is_some_and(|balance| balance <= FAILOVER_MIN_ACCOUNT_BALANCE);
-
-    match (invalid_only, low_balance, account_balance_failed) {
-        (true, true, _) => Some("isValid=false and accountBalance<=0.1"),
-        (true, false, true) => Some("isValid=false and accountBalance query failed"),
-        (true, false, false) => Some("isValid=false"),
-        (false, true, _) => Some("accountBalance<=0.1"),
-        (false, false, true) => Some("accountBalance query failed"),
-        (false, false, false) => None,
-    }
+    (saw_invalid && !saw_non_invalid).then_some("isValid=false")
 }
 
 pub(crate) fn next_failover_provider_id(
@@ -495,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn low_account_balance_requires_failover() {
+    fn low_account_balance_does_not_require_failover_when_usage_is_valid() {
         let result = UsageResult {
             success: true,
             data: Some(vec![UsageData {
@@ -517,15 +502,11 @@ mod tests {
             account_balance_failed: Some(false),
         };
 
-        assert!(usage_result_failover_reason(&result).is_some());
-        assert_eq!(
-            super::usage_result_failover_reason(&result),
-            Some("accountBalance<=0.1")
-        );
+        assert!(usage_result_failover_reason(&result).is_none());
     }
 
     #[test]
-    fn account_balance_query_failure_requires_failover() {
+    fn account_balance_query_failure_does_not_require_failover_when_usage_is_valid() {
         let result = UsageResult {
             success: true,
             data: Some(vec![UsageData {
@@ -547,10 +528,7 @@ mod tests {
             account_balance_failed: Some(true),
         };
 
-        assert_eq!(
-            super::usage_result_failover_reason(&result),
-            Some("accountBalance query failed")
-        );
+        assert!(usage_result_failover_reason(&result).is_none());
     }
 
     #[test]

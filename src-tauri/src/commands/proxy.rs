@@ -71,17 +71,6 @@ fn routerteam_recovery_block_reason(result: &UsageResult) -> Option<String> {
         ));
     }
 
-    if result.account_balance_failed == Some(true) {
-        return Some("余额查询失败".to_string());
-    }
-
-    let Some(account_balance) = result.account_balance else {
-        return Some("缺少余额数据".to_string());
-    };
-    if account_balance <= 0.1 {
-        return Some(format!("余额不足（当前 {:.2}）", account_balance));
-    }
-
     None
 }
 
@@ -118,7 +107,7 @@ async fn ensure_routerteam_recovery_ready(
 
     if let Some(reason) = routerteam_recovery_block_reason(&usage) {
         return Err(format!(
-            "RouterTeam 恢复条件未满足，维持当前故障状态：{reason}。需要同时满足 5小时 > 0.1、本周 > 0.1、余额 > 0.1。"
+            "RouterTeam 恢复条件未满足，维持当前故障状态：{reason}。需要同时满足 5小时 > 0.1、本周 > 0.1。"
         ));
     }
 
@@ -683,7 +672,7 @@ mod tests {
     }
 
     #[test]
-    fn routerteam_recovery_requires_all_quota_and_balance_thresholds() {
+    fn routerteam_recovery_requires_quota_thresholds_only() {
         assert_eq!(
             routerteam_recovery_block_reason(&routerteam_usage_result(
                 0.05,
@@ -709,11 +698,11 @@ mod tests {
                 Some(0.05),
                 Some(false)
             )),
-            Some("余额不足（当前 0.05）".to_string())
+            None
         );
         assert_eq!(
             routerteam_recovery_block_reason(&routerteam_usage_result(2.0, 3.0, None, Some(true))),
-            Some("余额查询失败".to_string())
+            None
         );
         assert_eq!(
             routerteam_recovery_block_reason(&routerteam_usage_result(

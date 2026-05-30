@@ -33,7 +33,8 @@ impl ProviderRouter {
     ///
     /// 返回按优先级排序的可用供应商列表：
     /// - 故障转移关闭时：仅返回当前供应商
-    /// - 故障转移开启时：仅使用故障转移队列，按队列顺序依次尝试（P1 → P2 → ...）
+    /// - 故障转移开启时：从当前激活供应商开始，仅尝试其后的故障转移队列项
+    ///   （例如当前已切到 P2，则后续请求按 P2 → P3 → ...，不会每次回头重试 P1）
     pub async fn select_providers(&self, app_type: &str) -> Result<Vec<Provider>, AppError> {
         let mut result = Vec::new();
         let mut total_providers = 0usize;
@@ -49,16 +50,25 @@ impl ProviderRouter {
         };
 
         if auto_failover_enabled {
-            // 故障转移开启：仅按队列顺序依次尝试（P1 → P2 → ...）
+            // 故障转移开启：从当前激活供应商开始，仅尝试其后继队列。
+            // 更高优先级供应商的自动回切由恢复逻辑单独处理，避免每个请求都回头碰 P1。
             let all_providers = self.db.get_all_providers(app_type)?;
+            let current_id = self.current_provider_id(app_type);
+            let queue = self.db.get_failover_queue(app_type)?;
 
-            // 使用 DAO 返回的排序结果，确保和前端展示一致
-            let ordered_ids: Vec<String> = self
-                .db
-                .get_failover_queue(app_type)?
-                .into_iter()
-                .map(|item| item.provider_id)
-                .collect();
+            let ordered_ids: Vec<String> = if let Some(current_id) = current_id.as_deref() {
+                if let Some(index) = queue.iter().position(|item| item.provider_id == current_id) {
+                    queue
+                        .into_iter()
+                        .skip(index)
+                        .map(|item| item.provider_id)
+                        .collect()
+                } else {
+                    queue.into_iter().map(|item| item.provider_id).collect()
+                }
+            } else {
+                queue.into_iter().map(|item| item.provider_id).collect()
+            };
 
             total_providers = ordered_ids.len();
 
@@ -78,14 +88,7 @@ impl ProviderRouter {
             }
         } else {
             // 故障转移关闭：仅使用当前供应商，跳过熔断器检查
-            let current_id = AppType::from_str(app_type)
-                .ok()
-                .and_then(|app_enum| {
-                    crate::settings::get_effective_current_provider(&self.db, &app_enum)
-                        .ok()
-                        .flatten()
-                })
-                .or_else(|| self.db.get_current_provider(app_type).ok().flatten());
+            let current_id = self.current_provider_id(app_type);
 
             if let Some(current_id) = current_id {
                 if let Some(current) = self.db.get_provider_by_id(&current_id, app_type)? {
@@ -106,6 +109,17 @@ impl ProviderRouter {
         }
 
         Ok(result)
+    }
+
+    fn current_provider_id(&self, app_type: &str) -> Option<String> {
+        AppType::from_str(app_type)
+            .ok()
+            .and_then(|app_enum| {
+                crate::settings::get_effective_current_provider(&self.db, &app_enum)
+                    .ok()
+                    .flatten()
+            })
+            .or_else(|| self.db.get_current_provider(app_type).ok().flatten())
     }
 
     /// 请求执行前获取熔断器“放行许可”
@@ -362,7 +376,7 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn test_failover_enabled_uses_queue_order_ignoring_current() {
+    async fn test_failover_enabled_starts_from_current_provider_in_queue() {
         let _home = TempHome::new();
         let db = Arc::new(Database::memory().unwrap());
 
@@ -389,10 +403,9 @@ mod tests {
         let router = ProviderRouter::new(db.clone());
         let providers = router.select_providers("claude").await.unwrap();
 
-        assert_eq!(providers.len(), 2);
-        // 故障转移开启时：仅按队列顺序选择（忽略当前供应商）
-        assert_eq!(providers[0].id, "b");
-        assert_eq!(providers[1].id, "a");
+        assert_eq!(providers.len(), 1);
+        // 故障转移开启时：从当前激活供应商开始尝试，不再回头重试更高优先级的 b。
+        assert_eq!(providers[0].id, "a");
     }
 
     #[tokio::test]
@@ -423,6 +436,43 @@ mod tests {
 
         assert_eq!(providers.len(), 1);
         assert_eq!(providers[0].id, "b");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_failover_enabled_keeps_current_provider_and_later_fallbacks() {
+        let _home = TempHome::new();
+        let db = Arc::new(Database::memory().unwrap());
+
+        let mut provider_a =
+            Provider::with_id("a".to_string(), "Provider A".to_string(), json!({}), None);
+        provider_a.sort_index = Some(1);
+        let mut provider_b =
+            Provider::with_id("b".to_string(), "Provider B".to_string(), json!({}), None);
+        provider_b.sort_index = Some(2);
+        let mut provider_c =
+            Provider::with_id("c".to_string(), "Provider C".to_string(), json!({}), None);
+        provider_c.sort_index = Some(3);
+
+        db.save_provider("claude", &provider_a).unwrap();
+        db.save_provider("claude", &provider_b).unwrap();
+        db.save_provider("claude", &provider_c).unwrap();
+        db.set_current_provider("claude", "b").unwrap();
+
+        db.add_to_failover_queue("claude", "a").unwrap();
+        db.add_to_failover_queue("claude", "b").unwrap();
+        db.add_to_failover_queue("claude", "c").unwrap();
+
+        let mut config = db.get_proxy_config_for_app("claude").await.unwrap();
+        config.auto_failover_enabled = true;
+        db.update_proxy_config_for_app(config).await.unwrap();
+
+        let router = ProviderRouter::new(db.clone());
+        let providers = router.select_providers("claude").await.unwrap();
+
+        assert_eq!(providers.len(), 2);
+        assert_eq!(providers[0].id, "b");
+        assert_eq!(providers[1].id, "c");
     }
 
     #[tokio::test]
