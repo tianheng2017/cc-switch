@@ -52,25 +52,50 @@ fn extract_routerteam_account(name: &str) -> Option<String> {
     Some(account.to_string())
 }
 
-fn build_usage_script(access_token: String) -> UsageScript {
+fn preserved_auto_query_interval(provider: &Provider) -> Option<u64> {
+    provider
+        .meta
+        .as_ref()
+        .and_then(|meta| meta.usage_script.as_ref())
+        .and_then(|usage_script| usage_script.auto_query_interval)
+}
+
+fn build_usage_script(
+    access_token: Option<String>,
+    enabled: bool,
+    auto_query_interval: Option<u64>,
+) -> UsageScript {
     UsageScript {
-        enabled: true,
+        enabled,
         language: "javascript".to_string(),
         code: ROUTERTEAM_USAGE_SCRIPT_CODE.to_string(),
         timeout: Some(ROUTERTEAM_USAGE_TIMEOUT_SECS),
-        api_key: Some(access_token),
+        api_key: access_token,
         base_url: Some(ROUTERTEAM_BASE_URL.to_string()),
         access_token: None,
         user_id: None,
         template_type: Some(ROUTERTEAM_USAGE_TEMPLATE_TYPE.to_string()),
-        auto_query_interval: Some(ROUTERTEAM_USAGE_AUTO_INTERVAL_SECS),
+        auto_query_interval: Some(
+            auto_query_interval.unwrap_or(ROUTERTEAM_USAGE_AUTO_INTERVAL_SECS),
+        ),
         coding_plan_provider: None,
     }
 }
 
 fn apply_usage_script(provider: &mut Provider, access_token: String) {
+    let auto_query_interval = preserved_auto_query_interval(provider);
     let meta = provider.meta.get_or_insert_with(ProviderMeta::default);
-    meta.usage_script = Some(build_usage_script(access_token));
+    meta.usage_script = Some(build_usage_script(
+        Some(access_token),
+        true,
+        auto_query_interval,
+    ));
+}
+
+fn disable_usage_script(provider: &mut Provider) {
+    let auto_query_interval = preserved_auto_query_interval(provider);
+    let meta = provider.meta.get_or_insert_with(ProviderMeta::default);
+    meta.usage_script = Some(build_usage_script(None, false, auto_query_interval));
 }
 
 async fn login_routerteam_account(
@@ -170,6 +195,8 @@ pub async fn refresh_codex_routerteam_usage_scripts(db: &Database) -> Result<usi
                 target.provider.name,
                 target.account
             );
+            disable_usage_script(&mut target.provider);
+            db.save_provider("codex", &target.provider)?;
             continue;
         };
 
@@ -183,7 +210,36 @@ pub async fn refresh_codex_routerteam_usage_scripts(db: &Database) -> Result<usi
 
 #[cfg(test)]
 mod tests {
-    use super::{build_usage_script, extract_routerteam_account, ROUTERTEAM_BASE_URL};
+    use super::{
+        apply_usage_script, build_usage_script, disable_usage_script, extract_routerteam_account,
+        ROUTERTEAM_BASE_URL,
+    };
+    use crate::provider::{Provider, ProviderMeta};
+    use serde_json::json;
+
+    fn provider_with_interval(interval: u64) -> Provider {
+        Provider {
+            id: "provider-1".to_string(),
+            name: "RouterTeam-demo@example.com".to_string(),
+            settings_config: json!({}),
+            website_url: None,
+            category: Some("third_party".to_string()),
+            created_at: None,
+            sort_index: None,
+            notes: None,
+            meta: Some(ProviderMeta {
+                usage_script: Some(build_usage_script(
+                    Some("old-token".to_string()),
+                    true,
+                    Some(interval),
+                )),
+                ..ProviderMeta::default()
+            }),
+            icon: None,
+            icon_color: None,
+            in_failover_queue: false,
+        }
+    }
 
     #[test]
     fn extracts_routerteam_account_from_provider_name() {
@@ -201,12 +257,50 @@ mod tests {
 
     #[test]
     fn builds_expected_usage_script() {
-        let script = build_usage_script("token-123".to_string());
+        let script = build_usage_script(Some("token-123".to_string()), true, None);
         assert!(script.enabled);
         assert_eq!(script.api_key.as_deref(), Some("token-123"));
         assert_eq!(script.base_url.as_deref(), Some(ROUTERTEAM_BASE_URL));
         assert_eq!(script.template_type.as_deref(), Some("general"));
         assert_eq!(script.auto_query_interval, Some(5));
         assert!(script.code.contains("codex-free-quota/reminder"));
+    }
+
+    #[test]
+    fn builds_disabled_usage_script_without_token() {
+        let script = build_usage_script(None, false, Some(30));
+        assert!(!script.enabled);
+        assert_eq!(script.api_key, None);
+        assert_eq!(script.auto_query_interval, Some(30));
+    }
+
+    #[test]
+    fn apply_usage_script_preserves_existing_interval() {
+        let mut provider = provider_with_interval(30);
+        apply_usage_script(&mut provider, "new-token".to_string());
+
+        let script = provider
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.usage_script.as_ref())
+            .expect("usage script should exist");
+        assert!(script.enabled);
+        assert_eq!(script.api_key.as_deref(), Some("new-token"));
+        assert_eq!(script.auto_query_interval, Some(30));
+    }
+
+    #[test]
+    fn disable_usage_script_clears_token_and_preserves_interval() {
+        let mut provider = provider_with_interval(45);
+        disable_usage_script(&mut provider);
+
+        let script = provider
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.usage_script.as_ref())
+            .expect("usage script should exist");
+        assert!(!script.enabled);
+        assert_eq!(script.api_key, None);
+        assert_eq!(script.auto_query_interval, Some(45));
     }
 }

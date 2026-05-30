@@ -36,6 +36,7 @@ import { proxyApi } from "@/lib/api/proxy";
 const PRICING_APPS = ["claude", "codex", "gemini"] as const;
 type PricingApp = (typeof PRICING_APPS)[number];
 type PricingModelSource = "request" | "response";
+const COST_MULTIPLIER_INPUT_STEP = "any";
 
 interface AppConfig {
   multiplier: string;
@@ -280,7 +281,7 @@ export function PricingConfigPanel() {
                     <td className="px-3 py-1.5">
                       <Input
                         type="number"
-                        step="0.01"
+                        step={COST_MULTIPLIER_INPUT_STEP}
                         min="0"
                         inputMode="decimal"
                         value={appConfigs[app].multiplier}

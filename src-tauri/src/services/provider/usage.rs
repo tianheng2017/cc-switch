@@ -114,15 +114,18 @@ pub(crate) fn usage_result_failover_reason(result: &UsageResult) -> Option<&'sta
         .unwrap_or((false, false));
 
     let invalid_only = saw_invalid && !saw_non_invalid;
+    let account_balance_failed = result.account_balance_failed == Some(true);
     let low_balance = result
         .account_balance
         .is_some_and(|balance| balance <= FAILOVER_MIN_ACCOUNT_BALANCE);
 
-    match (invalid_only, low_balance) {
-        (true, true) => Some("isValid=false and accountBalance<=0.1"),
-        (true, false) => Some("isValid=false"),
-        (false, true) => Some("accountBalance<=0.1"),
-        (false, false) => None,
+    match (invalid_only, low_balance, account_balance_failed) {
+        (true, true, _) => Some("isValid=false and accountBalance<=0.1"),
+        (true, false, true) => Some("isValid=false and accountBalance query failed"),
+        (true, false, false) => Some("isValid=false"),
+        (false, true, _) => Some("accountBalance<=0.1"),
+        (false, false, true) => Some("accountBalance query failed"),
+        (false, false, false) => None,
     }
 }
 
@@ -518,6 +521,35 @@ mod tests {
         assert_eq!(
             super::usage_result_failover_reason(&result),
             Some("accountBalance<=0.1")
+        );
+    }
+
+    #[test]
+    fn account_balance_query_failure_requires_failover() {
+        let result = UsageResult {
+            success: true,
+            data: Some(vec![UsageData {
+                is_valid: Some(true),
+                invalid_message: None,
+                plan_name: None,
+                extra: None,
+                total: None,
+                used: None,
+                remaining: None,
+                window_remaining_quota: Some(2.0),
+                weekly_remaining_quota: Some(8.0),
+                cycle_ends_at: None,
+                window_ends_at: None,
+                unit: None,
+            }]),
+            error: None,
+            account_balance: None,
+            account_balance_failed: Some(true),
+        };
+
+        assert_eq!(
+            super::usage_result_failover_reason(&result),
+            Some("accountBalance query failed")
         );
     }
 

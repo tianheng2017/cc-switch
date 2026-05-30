@@ -51,6 +51,74 @@ export function hasWindowedQuota(data: UsageData): boolean {
   );
 }
 
+function formatLocalDate(date: Date): string {
+  const pad = (part: number) => part.toString().padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
+    date.getDate(),
+  )} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(
+    date.getSeconds(),
+  )}`;
+}
+
+function parseResetTimeString(value: string): Date | null {
+  const trimmed = value.trim();
+  const match = trimmed.match(
+    /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?(?:([zZ])|([+-])(\d{2}):?(\d{2}))?$/,
+  );
+  if (!match) {
+    return null;
+  }
+
+  const [
+    ,
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second,
+    fractionRaw,
+    zulu,
+    offsetSign,
+    offsetHour,
+    offsetMinute,
+  ] = match;
+
+  const milliseconds = Number((fractionRaw ?? "0").slice(0, 3).padEnd(3, "0"));
+
+  if (!zulu && !offsetSign) {
+    return new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second),
+      milliseconds,
+    );
+  }
+
+  const offsetMs =
+    zulu || !offsetSign
+      ? 0
+      : (Number(offsetHour) * 60 + Number(offsetMinute)) *
+        60 *
+        1000 *
+        (offsetSign === "+" ? 1 : -1);
+
+  return new Date(
+    Date.UTC(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second),
+      milliseconds,
+    ) - offsetMs,
+  );
+}
+
 export function formatUsageResetTime(
   value: string | number | undefined,
 ): string | null {
@@ -60,12 +128,12 @@ export function formatUsageResetTime(
 
   if (typeof value === "string") {
     const trimmed = value.trim();
-    const match = trimmed.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})/);
-    if (match) {
-      return `${match[1]} ${match[2]}`;
-    }
     if (!trimmed) {
       return null;
+    }
+    const parsed = parseResetTimeString(trimmed);
+    if (parsed && !Number.isNaN(parsed.getTime())) {
+      return formatLocalDate(parsed);
     }
     return trimmed;
   }
@@ -76,12 +144,7 @@ export function formatUsageResetTime(
     return String(value);
   }
 
-  const pad = (part: number) => part.toString().padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-    date.getDate(),
-  )} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(
-    date.getSeconds(),
-  )}`;
+  return formatLocalDate(date);
 }
 
 function formatUsed(

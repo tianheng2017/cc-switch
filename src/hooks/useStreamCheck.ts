@@ -7,11 +7,33 @@ import {
 } from "@/lib/api/model-test";
 import type { AppId } from "@/lib/api";
 import { useResetCircuitBreaker } from "@/lib/query/failover";
+import { extractErrorMessage } from "@/utils/errorUtils";
 
 export function useStreamCheck(appId: AppId) {
   const { t } = useTranslation();
   const [checkingIds, setCheckingIds] = useState<Set<string>>(new Set());
   const resetCircuitBreaker = useResetCircuitBreaker();
+
+  const tryRecoverProvider = useCallback(
+    async (providerId: string, providerName: string) => {
+      try {
+        await resetCircuitBreaker.mutateAsync({ providerId, appType: appId });
+      } catch (error) {
+        const detail =
+          extractErrorMessage(error) ||
+          t("common.unknown", { defaultValue: "未知错误" });
+        toast.warning(
+          t("streamCheck.recoveryBlocked", {
+            providerName,
+            detail,
+            defaultValue: `${providerName} 测试通过，但未恢复故障状态：${detail}`,
+          }),
+          { duration: 10000, closeButton: true },
+        );
+      }
+    },
+    [appId, resetCircuitBreaker, t],
+  );
 
   const checkProvider = useCallback(
     async (
@@ -34,7 +56,7 @@ export function useStreamCheck(appId: AppId) {
           );
 
           // 测试通过后重置熔断器状态
-          resetCircuitBreaker.mutate({ providerId, appType: appId });
+          await tryRecoverProvider(providerId, providerName);
         } else if (result.status === "degraded") {
           toast.warning(
             t("streamCheck.degraded", {
@@ -45,7 +67,7 @@ export function useStreamCheck(appId: AppId) {
           );
 
           // 降级状态也重置熔断器，因为至少能通信
-          resetCircuitBreaker.mutate({ providerId, appType: appId });
+          await tryRecoverProvider(providerId, providerName);
         } else if (result.errorCategory === "modelNotFound") {
           // 专门处理"模型不存在/已下架"：指向配置入口，比通用 404 文案更有指导性
           toast.error(
@@ -128,7 +150,7 @@ export function useStreamCheck(appId: AppId) {
         });
       }
     },
-    [appId, t, resetCircuitBreaker],
+    [appId, t, tryRecoverProvider],
   );
 
   const isChecking = useCallback(

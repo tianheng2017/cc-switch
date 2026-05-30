@@ -37,6 +37,7 @@ import {
   type AppId,
   type ProviderSwitchEvent,
 } from "@/lib/api";
+import { usageKeys } from "@/lib/query/usage";
 import { checkAllEnvConflicts, checkEnvConflicts } from "@/lib/api/env";
 import { useProviderActions } from "@/hooks/useProviderActions";
 import { openclawKeys, useOpenClawHealth } from "@/hooks/useOpenClaw";
@@ -341,6 +342,16 @@ function App() {
         const off = await providersApi.onSwitched(
           async (event: ProviderSwitchEvent) => {
             if (event.appType === activeApp) {
+              await Promise.all([
+                queryClient.invalidateQueries({
+                  queryKey: ["providers", event.appType],
+                }),
+                queryClient.invalidateQueries({ queryKey: ["proxyStatus"] }),
+                queryClient.invalidateQueries({
+                  queryKey: ["proxyTakeoverStatus"],
+                }),
+                queryClient.invalidateQueries({ queryKey: usageKeys.all }),
+              ]);
               await refetch();
             }
           },
@@ -360,7 +371,7 @@ function App() {
       active = false;
       unsubscribe?.();
     };
-  }, [activeApp, refetch]);
+  }, [activeApp, queryClient, refetch]);
 
   useTauriEvent("universal-provider-synced", async () => {
     await queryClient.invalidateQueries({ queryKey: ["providers"] });

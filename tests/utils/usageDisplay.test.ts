@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { formatUsageDataSummary } from "@/utils/usageDisplay";
+import {
+  formatUsageDataSummary,
+  formatUsageResetTime,
+} from "@/utils/usageDisplay";
 
 const labels = {
   invalid: "Invalid",
@@ -52,6 +55,11 @@ describe("formatUsageDataSummary", () => {
   });
 
   it("formats windowed quota fields with 5h and weekly labels", () => {
+    const expectedUtcReset = formatUsageResetTime("2026-05-30T12:00:00Z");
+    const expectedLocalReset = formatUsageResetTime(
+      "2026-06-01T23:33:05.593484",
+    );
+
     expect(
       formatUsageDataSummary(
         {
@@ -63,7 +71,13 @@ describe("formatUsageDataSummary", () => {
         labels,
       ),
     ).toBe(
-      "5h remaining: 10 / Weekly remaining: 42.25 / 5h reset: 2026-05-30 12:00:00 / 7d reset: 2026-06-01 23:33:05",
+      `5h remaining: 10 / Weekly remaining: 42.25 / 5h reset: ${expectedUtcReset} / 7d reset: ${expectedLocalReset}`,
+    );
+  });
+
+  it("formats timezone-aware reset strings in local time", () => {
+    expect(formatUsageResetTime("2026-05-30T12:00:00+08:00")).toBe(
+      formatUsageResetTime(new Date("2026-05-30T04:00:00Z").getTime()),
     );
   });
 });

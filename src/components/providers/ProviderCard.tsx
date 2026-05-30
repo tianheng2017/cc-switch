@@ -221,11 +221,16 @@ export function ProviderCard({
     appId === "claude" && provider.category === "third_party";
 
   // 获取用量数据以判断是否有多套餐
-  // 累加模式应用（OpenCode/OpenClaw/Hermes）：使用 isInConfig 代替 isCurrent
+  // 累加模式应用（OpenCode/OpenClaw/Hermes）：使用 isInConfig
+  // 故障转移模式：使用代理当前实际目标（activeProviderId）而不是旧的 isCurrent 高亮状态
   const shouldAutoQuery =
     appId === "opencode" || appId === "openclaw" || appId === "hermes"
       ? isInConfig
-      : isCurrent;
+      : isAutoFailoverEnabled
+        ? activeProviderId
+          ? activeProviderId === provider.id
+          : isCurrent
+        : isCurrent;
   const autoQueryInterval = shouldAutoQuery
     ? provider.meta?.usage_script?.autoQueryInterval || 0
     : 0;
@@ -489,8 +494,7 @@ export function ProviderCard({
                   providerId={provider.id}
                   appId={appId}
                   usageEnabled={usageEnabled}
-                  isCurrent={isCurrent}
-                  isInConfig={isInConfig}
+                  shouldAutoQuery={shouldAutoQuery}
                   inline={true}
                 />
               )}
@@ -572,8 +576,7 @@ export function ProviderCard({
             providerId={provider.id}
             appId={appId}
             usageEnabled={usageEnabled}
-            isCurrent={isCurrent}
-            isInConfig={isInConfig}
+            shouldAutoQuery={shouldAutoQuery}
             inline={false}
           />
         </div>

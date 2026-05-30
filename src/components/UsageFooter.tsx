@@ -17,8 +17,7 @@ interface UsageFooterProps {
   providerId: string;
   appId: AppId;
   usageEnabled: boolean; // 是否启用了用量查询
-  isCurrent: boolean; // 是否为当前激活的供应商
-  isInConfig?: boolean; // OpenCode: 是否已添加到配置
+  shouldAutoQuery?: boolean; // 是否启用自动查询
   inline?: boolean; // 是否内联显示（在按钮左侧）
 }
 
@@ -44,9 +43,27 @@ function usageValueClass(data: UsageData): string {
     return "text-red-500 dark:text-red-400";
   }
 
+  if (remaining !== undefined && remaining < (data.total || remaining) * 0.1) {
+    return "text-orange-500 dark:text-orange-400";
+  }
+
+  return "text-green-600 dark:text-green-400";
+}
+
+function usageValueClassForList(dataList: UsageData[]): string {
+  if (dataList.length === 0) {
+    return "text-green-600 dark:text-green-400";
+  }
+
+  if (dataList.some((data) => data.isValid === false)) {
+    return "text-red-500 dark:text-red-400";
+  }
+
   if (
-    remaining !== undefined &&
-    remaining < (data.total || remaining) * 0.1
+    dataList.some(
+      (data) =>
+        usageValueClass(data) === "text-orange-500 dark:text-orange-400",
+    )
   ) {
     return "text-orange-500 dark:text-orange-400";
   }
@@ -61,7 +78,12 @@ function formatMetricValue(value: number): string {
 const AccountBalanceMetric: React.FC<{
   balance?: number;
   failed?: boolean;
-}> = ({ balance, failed = false }) => {
+  valueClass?: string;
+}> = ({
+  balance,
+  failed = false,
+  valueClass = "text-green-600 dark:text-green-400",
+}) => {
   const { t } = useTranslation();
 
   if (balance === undefined && !failed) {
@@ -75,9 +97,7 @@ const AccountBalanceMetric: React.FC<{
       </span>
       <span
         className={`font-medium tabular-nums ${
-          failed
-            ? "text-red-500 dark:text-red-400"
-            : "text-green-600 dark:text-green-400"
+          failed ? "text-red-500 dark:text-red-400" : valueClass
         }`}
       >
         {failed ? t("usage.queryFailed") : formatMetricValue(balance!)}
@@ -134,17 +154,13 @@ const UsageFooter: React.FC<UsageFooterProps> = ({
   providerId,
   appId,
   usageEnabled,
-  isCurrent,
-  isInConfig = false,
+  shouldAutoQuery = false,
   inline = false,
 }) => {
   const { t } = useTranslation();
   const isTokenPlan =
     provider.meta?.usage_script?.templateType === "token_plan";
 
-  // 统一的用量查询（自动查询仅对当前激活的供应商启用）
-  // OpenCode（累加模式）：使用 isInConfig 代替 isCurrent
-  const shouldAutoQuery = appId === "opencode" ? isInConfig : isCurrent;
   const autoQueryInterval = shouldAutoQuery
     ? provider.meta?.usage_script?.autoQueryInterval || 0
     : 0;
@@ -178,6 +194,7 @@ const UsageFooter: React.FC<UsageFooterProps> = ({
 
   const accountBalance = usage.accountBalance;
   const accountBalanceFailed = usage.accountBalanceFailed === true;
+  const accountBalanceClass = usageValueClassForList(usage.data || []);
 
   // 错误状态
   if (!usage.success) {
@@ -187,6 +204,7 @@ const UsageFooter: React.FC<UsageFooterProps> = ({
           <AccountBalanceMetric
             balance={accountBalance}
             failed={accountBalanceFailed}
+            valueClass={accountBalanceClass}
           />
           {(accountBalance !== undefined || accountBalanceFailed) && (
             <span className="text-gray-400 dark:text-gray-600">|</span>
@@ -214,6 +232,7 @@ const UsageFooter: React.FC<UsageFooterProps> = ({
             <AccountBalanceMetric
               balance={accountBalance}
               failed={accountBalanceFailed}
+              valueClass={accountBalanceClass}
             />
             {(accountBalance !== undefined || accountBalanceFailed) && (
               <span className="text-gray-400 dark:text-gray-600">|</span>
@@ -328,6 +347,7 @@ const UsageFooter: React.FC<UsageFooterProps> = ({
           <AccountBalanceMetric
             balance={accountBalance}
             failed={accountBalanceFailed}
+            valueClass={accentClass}
           />
 
           {/* 剩余 */}
@@ -387,6 +407,7 @@ const UsageFooter: React.FC<UsageFooterProps> = ({
           <AccountBalanceMetric
             balance={accountBalance}
             failed={accountBalanceFailed}
+            valueClass={accountBalanceClass}
           />
         </div>
         <div className="flex items-center gap-2">

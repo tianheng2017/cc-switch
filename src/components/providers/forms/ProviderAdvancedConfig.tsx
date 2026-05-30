@@ -16,6 +16,8 @@ import type { ProviderTestConfig } from "@/types";
 
 export type PricingModelSourceOption = "inherit" | "request" | "response";
 
+const COST_MULTIPLIER_INPUT_STEP = "any";
+
 interface ProviderPricingConfig {
   enabled: boolean;
   costMultiplier?: string;
@@ -296,7 +298,7 @@ export function ProviderAdvancedConfig({
                 <Input
                   id="cost-multiplier"
                   type="number"
-                  step="0.01"
+                  step={COST_MULTIPLIER_INPUT_STEP}
                   min="0"
                   inputMode="decimal"
                   value={pricingConfig.costMultiplier || ""}

@@ -2,10 +2,128 @@
 //!
 //! 提供前端调用的 API 接口
 
+use crate::app_config::AppType;
 use crate::error::AppError;
+use crate::provider::{Provider, UsageResult};
 use crate::proxy::types::*;
 use crate::proxy::{CircuitBreakerConfig, CircuitBreakerStats};
 use crate::store::AppState;
+use std::str::FromStr;
+
+const ROUTERTEAM_NAME_MARKER: &str = "RouterTeam";
+const ROUTERTEAM_BASE_URL: &str = "https://ai.router.team";
+const ROUTERTEAM_QUOTA_PATH: &str = "/api/user/codex-free-quota/reminder";
+
+fn is_routerteam_recovery_guard_provider(provider: &Provider) -> bool {
+    let Some(usage_script) = provider
+        .meta
+        .as_ref()
+        .and_then(|meta| meta.usage_script.as_ref())
+    else {
+        return false;
+    };
+
+    if !usage_script.enabled {
+        return false;
+    }
+
+    provider.name.contains(ROUTERTEAM_NAME_MARKER)
+        || (usage_script.template_type.as_deref() == Some("general")
+            && usage_script
+                .base_url
+                .as_deref()
+                .map(|url| url.trim_end_matches('/'))
+                == Some(ROUTERTEAM_BASE_URL)
+            && usage_script.code.contains(ROUTERTEAM_QUOTA_PATH))
+}
+
+fn routerteam_recovery_block_reason(result: &UsageResult) -> Option<String> {
+    if !result.success {
+        return Some(
+            result
+                .error
+                .clone()
+                .unwrap_or_else(|| "用量查询失败".to_string()),
+        );
+    }
+
+    let Some(usage) = result.data.as_ref().and_then(|items| items.first()) else {
+        return Some("缺少用量数据".to_string());
+    };
+
+    let Some(window_remaining_quota) = usage.window_remaining_quota else {
+        return Some("缺少 5 小时剩余额度".to_string());
+    };
+    if window_remaining_quota <= 0.1 {
+        return Some(format!(
+            "5 小时剩余不足（当前 {:.2}）",
+            window_remaining_quota
+        ));
+    }
+
+    let Some(weekly_remaining_quota) = usage.weekly_remaining_quota else {
+        return Some("缺少本周剩余额度".to_string());
+    };
+    if weekly_remaining_quota <= 0.1 {
+        return Some(format!(
+            "本周剩余不足（当前 {:.2}）",
+            weekly_remaining_quota
+        ));
+    }
+
+    if result.account_balance_failed == Some(true) {
+        return Some("余额查询失败".to_string());
+    }
+
+    let Some(account_balance) = result.account_balance else {
+        return Some("缺少余额数据".to_string());
+    };
+    if account_balance <= 0.1 {
+        return Some(format!("余额不足（当前 {:.2}）", account_balance));
+    }
+
+    None
+}
+
+async fn ensure_routerteam_recovery_ready(
+    state: &AppState,
+    provider_id: &str,
+    app_type: &str,
+) -> Result<(), String> {
+    let health = state
+        .db
+        .get_provider_health(provider_id, app_type)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if health.is_healthy && health.consecutive_failures == 0 {
+        return Ok(());
+    }
+
+    let provider = state
+        .db
+        .get_provider_by_id(provider_id, app_type)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("供应商不存在: {provider_id}"))?;
+
+    if !is_routerteam_recovery_guard_provider(&provider) {
+        return Ok(());
+    }
+
+    let app_type_enum =
+        AppType::from_str(app_type).map_err(|_| format!("无效的应用类型: {app_type}"))?;
+    let usage = crate::services::ProviderService::query_usage(state, app_type_enum, provider_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if let Some(reason) = routerteam_recovery_block_reason(&usage) {
+        return Err(format!(
+            "RouterTeam 恢复条件未满足，维持当前故障状态：{reason}。需要同时满足 5小时 > 0.1、本周 > 0.1、余额 > 0.1。"
+        ));
+    }
+
+    Ok(())
+}
 
 /// 启动代理服务器（仅启动服务，不接管 Live 配置）
 #[tauri::command]
@@ -325,6 +443,8 @@ pub async fn reset_circuit_breaker(
     provider_id: String,
     app_type: String,
 ) -> Result<(), String> {
+    ensure_routerteam_recovery_ready(state.inner(), &provider_id, &app_type).await?;
+
     // 1. 重置数据库健康状态
     let db = &state.db;
     db.update_provider_health(&provider_id, &app_type, true, None)
@@ -445,4 +565,164 @@ pub async fn get_circuit_breaker_stats(
     // 目前先返回 None，后续可以通过 ProxyService 暴露接口来实现
     let _ = (state, provider_id, app_type);
     Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_routerteam_recovery_guard_provider, routerteam_recovery_block_reason};
+    use crate::provider::{Provider, ProviderMeta, UsageData, UsageResult, UsageScript};
+    use serde_json::json;
+
+    fn provider_with_usage_script(
+        name: &str,
+        base_url: Option<&str>,
+        code: &str,
+        enabled: bool,
+    ) -> Provider {
+        Provider {
+            id: "provider-1".to_string(),
+            name: name.to_string(),
+            settings_config: json!({}),
+            website_url: None,
+            category: Some("third_party".to_string()),
+            created_at: None,
+            sort_index: None,
+            notes: None,
+            meta: Some(ProviderMeta {
+                usage_script: Some(UsageScript {
+                    enabled,
+                    language: "javascript".to_string(),
+                    code: code.to_string(),
+                    timeout: Some(10),
+                    api_key: Some("token".to_string()),
+                    base_url: base_url.map(str::to_string),
+                    access_token: None,
+                    user_id: None,
+                    template_type: Some("general".to_string()),
+                    auto_query_interval: Some(5),
+                    coding_plan_provider: None,
+                }),
+                ..ProviderMeta::default()
+            }),
+            icon: None,
+            icon_color: None,
+            in_failover_queue: false,
+        }
+    }
+
+    fn routerteam_usage_result(
+        window_remaining_quota: f64,
+        weekly_remaining_quota: f64,
+        account_balance: Option<f64>,
+        account_balance_failed: Option<bool>,
+    ) -> UsageResult {
+        UsageResult {
+            success: true,
+            data: Some(vec![UsageData {
+                plan_name: None,
+                extra: None,
+                is_valid: Some(true),
+                invalid_message: None,
+                total: None,
+                used: None,
+                remaining: None,
+                window_remaining_quota: Some(window_remaining_quota),
+                weekly_remaining_quota: Some(weekly_remaining_quota),
+                cycle_ends_at: None,
+                window_ends_at: None,
+                unit: None,
+            }]),
+            error: None,
+            account_balance,
+            account_balance_failed,
+        }
+    }
+
+    #[test]
+    fn detects_routerteam_recovery_guard_provider_by_name_or_script() {
+        let by_name = provider_with_usage_script("RouterTeam-demo", None, "", true);
+        assert!(is_routerteam_recovery_guard_provider(&by_name));
+
+        let by_script = provider_with_usage_script(
+            "Custom Relay",
+            Some("https://ai.router.team"),
+            "url: '{{baseUrl}}/api/user/codex-free-quota/reminder'",
+            true,
+        );
+        assert!(is_routerteam_recovery_guard_provider(&by_script));
+
+        let other = provider_with_usage_script(
+            "Custom Relay",
+            Some("https://example.com"),
+            "url: '{{baseUrl}}/api/user/codex-free-quota/reminder'",
+            true,
+        );
+        assert!(!is_routerteam_recovery_guard_provider(&other));
+    }
+
+    #[test]
+    fn non_routerteam_provider_keeps_original_recovery_path() {
+        let provider = provider_with_usage_script(
+            "Acme Relay",
+            Some("https://example.com"),
+            "url: '{{baseUrl}}/api/usage'",
+            true,
+        );
+        assert!(!is_routerteam_recovery_guard_provider(&provider));
+    }
+
+    #[test]
+    fn disabled_routerteam_usage_query_keeps_original_recovery_path() {
+        let provider = provider_with_usage_script(
+            "RouterTeam-demo",
+            Some("https://ai.router.team"),
+            "url: '{{baseUrl}}/api/user/codex-free-quota/reminder'",
+            false,
+        );
+        assert!(!is_routerteam_recovery_guard_provider(&provider));
+    }
+
+    #[test]
+    fn routerteam_recovery_requires_all_quota_and_balance_thresholds() {
+        assert_eq!(
+            routerteam_recovery_block_reason(&routerteam_usage_result(
+                0.05,
+                2.0,
+                Some(3.0),
+                Some(false)
+            )),
+            Some("5 小时剩余不足（当前 0.05）".to_string())
+        );
+        assert_eq!(
+            routerteam_recovery_block_reason(&routerteam_usage_result(
+                2.0,
+                0.05,
+                Some(3.0),
+                Some(false)
+            )),
+            Some("本周剩余不足（当前 0.05）".to_string())
+        );
+        assert_eq!(
+            routerteam_recovery_block_reason(&routerteam_usage_result(
+                2.0,
+                3.0,
+                Some(0.05),
+                Some(false)
+            )),
+            Some("余额不足（当前 0.05）".to_string())
+        );
+        assert_eq!(
+            routerteam_recovery_block_reason(&routerteam_usage_result(2.0, 3.0, None, Some(true))),
+            Some("余额查询失败".to_string())
+        );
+        assert_eq!(
+            routerteam_recovery_block_reason(&routerteam_usage_result(
+                2.0,
+                3.0,
+                Some(5.0),
+                Some(false)
+            )),
+            None
+        );
+    }
 }

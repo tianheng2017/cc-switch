@@ -192,6 +192,68 @@ fn tier_pct(data: &crate::provider::UsageData) -> Option<f64> {
     }
 }
 
+fn format_compact_metric(value: f64) -> String {
+    if value.fract().abs() < f64::EPSILON {
+        return format!("{}", value as i64);
+    }
+
+    let mut s = format!("{value:.2}");
+    while s.ends_with('0') {
+        s.pop();
+    }
+    if s.ends_with('.') {
+        s.pop();
+    }
+    s
+}
+
+fn format_windowed_quota_summary(result: &crate::provider::UsageResult) -> Option<String> {
+    let data = result.data.as_ref()?;
+    let first = data.iter().find(|item| {
+        item.window_remaining_quota.is_some() || item.weekly_remaining_quota.is_some()
+    })?;
+
+    let mut parts = Vec::new();
+    if let Some(balance) = result.account_balance {
+        parts.push(format!("b{}", format_compact_metric(balance)));
+    } else if result.account_balance_failed == Some(true) {
+        parts.push("b!".to_string());
+    }
+    if let Some(window_remaining_quota) = first.window_remaining_quota {
+        parts.push(format!(
+            "5h{}",
+            format_compact_metric(window_remaining_quota)
+        ));
+    }
+    if let Some(weekly_remaining_quota) = first.weekly_remaining_quota {
+        parts.push(format!(
+            "w{}",
+            format_compact_metric(weekly_remaining_quota)
+        ));
+    }
+    if parts.is_empty() {
+        return None;
+    }
+
+    let emoji = if first.is_valid == Some(false)
+        || result.account_balance.is_some_and(|value| value <= 0.1)
+        || first
+            .window_remaining_quota
+            .is_some_and(|value| value <= 0.1)
+        || first
+            .weekly_remaining_quota
+            .is_some_and(|value| value <= 0.1)
+    {
+        "\u{1F534}"
+    } else if result.account_balance_failed == Some(true) {
+        "\u{1F7E0}"
+    } else {
+        "\u{1F7E2}"
+    };
+
+    Some(format!("{emoji} {}", parts.join(" ")))
+}
+
 fn format_script_summary(result: &crate::provider::UsageResult) -> Option<String> {
     use crate::services::subscription::{TIER_FIVE_HOUR, TIER_WEEKLY_LIMIT};
 
@@ -232,6 +294,10 @@ fn format_script_summary(result: &crate::provider::UsageResult) -> Option<String
             .collect::<Vec<_>>()
             .join(" ");
         return Some(format!("{emoji} {body}"));
+    }
+
+    if let Some(summary) = format_windowed_quota_summary(result) {
+        return Some(summary);
     }
 
     let first = data.first()?;
@@ -1032,6 +1098,27 @@ mod tests {
         }
     }
 
+    fn windowed_usage_data(
+        window_remaining_quota: Option<f64>,
+        weekly_remaining_quota: Option<f64>,
+        is_valid: Option<bool>,
+    ) -> UsageData {
+        UsageData {
+            plan_name: None,
+            extra: None,
+            is_valid,
+            invalid_message: None,
+            total: None,
+            used: None,
+            remaining: None,
+            window_remaining_quota,
+            weekly_remaining_quota,
+            cycle_ends_at: None,
+            window_ends_at: None,
+            unit: None,
+        }
+    }
+
     #[test]
     fn script_summary_token_plan_two_tiers() {
         let r = usage_result(
@@ -1107,5 +1194,29 @@ mod tests {
     fn script_summary_empty_data_returns_none() {
         let r = usage_result(true, vec![]);
         assert!(format_script_summary(&r).is_none());
+    }
+
+    #[test]
+    fn script_summary_windowed_quota_renders_routerteam_format() {
+        let mut r = usage_result(
+            true,
+            vec![windowed_usage_data(Some(4.5), Some(16.25), Some(true))],
+        );
+        r.account_balance = Some(12.0);
+
+        let s = format_script_summary(&r).expect("should format");
+        assert_eq!(s, "\u{1F7E2} b12 5h4.5 w16.25");
+    }
+
+    #[test]
+    fn script_summary_windowed_quota_marks_balance_failure() {
+        let mut r = usage_result(
+            true,
+            vec![windowed_usage_data(Some(4.5), Some(16.25), Some(true))],
+        );
+        r.account_balance_failed = Some(true);
+
+        let s = format_script_summary(&r).expect("should format");
+        assert_eq!(s, "\u{1F7E0} b! 5h4.5 w16.25");
     }
 }
