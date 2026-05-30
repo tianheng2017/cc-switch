@@ -60,21 +60,16 @@ export function RouterTeamUsageIntervalPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <Clock3 className="h-5 w-5 text-emerald-500" />
-        <div className="text-left">
-          <h3 className="text-base font-semibold">
-            {t("usage.routerTeamBatchInterval.title")}
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            {t("usage.routerTeamBatchInterval.description")}
-          </p>
+      <div className="rounded-lg border border-emerald-500/15 bg-emerald-500/5 px-3 py-2">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Clock3 className="h-3.5 w-3.5 text-emerald-500" />
+          <span>{t("usage.routerTeamBatchInterval.intervalHint")}</span>
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <div className="flex-1 space-y-2">
-          <label className="text-sm font-medium text-foreground">
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground/90">
             {t("usage.routerTeamBatchInterval.intervalLabel")}
           </label>
           <Input
@@ -85,13 +80,15 @@ export function RouterTeamUsageIntervalPanel() {
             value={intervalValue}
             onChange={(event) => setIntervalValue(event.target.value)}
             placeholder="5"
+            className="h-10"
           />
-          <p className="text-xs text-muted-foreground">
-            {t("usage.routerTeamBatchInterval.intervalHint")}
-          </p>
         </div>
 
-        <Button onClick={handleApply} disabled={isApplying}>
+        <Button
+          onClick={handleApply}
+          disabled={isApplying}
+          className="h-10 min-w-28"
+        >
           {isApplying ? (
             <span className="inline-flex items-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" />

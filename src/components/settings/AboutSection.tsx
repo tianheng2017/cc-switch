@@ -319,12 +319,9 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
 
   useEffect(() => {
     let active = true;
-    const load = async () => {
+    const loadVersion = async () => {
       try {
-        const [appVersion] = await Promise.all([
-          getVersion(),
-          loadAllToolVersions(),
-        ]);
+        const appVersion = await getVersion();
 
         if (active) {
           setVersion(appVersion);
@@ -341,10 +338,14 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
       }
     };
 
-    void load();
+    void loadVersion();
     return () => {
       active = false;
     };
+  }, []);
+
+  useEffect(() => {
+    void loadAllToolVersions();
     // Mount-only: loadAllToolVersions is intentionally excluded to avoid
     // re-fetching all tools whenever wslShellByTool changes. Single-tool
     // refreshes are handled by refreshToolVersions in the shell/flag handlers.
