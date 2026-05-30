@@ -648,7 +648,7 @@
     "updating": "Updating...",
     "checking": "Checking...",
     "upToDate": "Up to Date",
-    "aboutHint": "View version information and update status.",
+    "aboutHint": "View version information and related links.",
     "portableMode": "Portable mode: updates require manual download.",
     "updateAvailable": "New version available: {{version}}",
     "updateBadge": "Update available",

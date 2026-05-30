@@ -236,7 +236,6 @@ fn format_windowed_quota_summary(result: &crate::provider::UsageResult) -> Optio
     }
 
     let emoji = if first.is_valid == Some(false)
-        || result.account_balance.is_some_and(|value| value <= 0.1)
         || first
             .window_remaining_quota
             .is_some_and(|value| value <= 0.1)
@@ -245,8 +244,6 @@ fn format_windowed_quota_summary(result: &crate::provider::UsageResult) -> Optio
             .is_some_and(|value| value <= 0.1)
     {
         "\u{1F534}"
-    } else if result.account_balance_failed == Some(true) {
-        "\u{1F7E0}"
     } else {
         "\u{1F7E2}"
     };
@@ -1217,6 +1214,18 @@ mod tests {
         r.account_balance_failed = Some(true);
 
         let s = format_script_summary(&r).expect("should format");
-        assert_eq!(s, "\u{1F7E0} b! 5h4.5 w16.25");
+        assert_eq!(s, "\u{1F7E2} b! 5h4.5 w16.25");
+    }
+
+    #[test]
+    fn script_summary_windowed_quota_ignores_low_balance_for_health_emoji() {
+        let mut r = usage_result(
+            true,
+            vec![windowed_usage_data(Some(4.5), Some(16.25), Some(true))],
+        );
+        r.account_balance = Some(0.05);
+
+        let s = format_script_summary(&r).expect("should format");
+        assert_eq!(s, "\u{1F7E2} b0.05 5h4.5 w16.25");
     }
 }

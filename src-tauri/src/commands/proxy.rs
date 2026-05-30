@@ -3,6 +3,7 @@
 //! 提供前端调用的 API 接口
 
 use crate::app_config::AppType;
+use crate::database::FailoverQueueItem;
 use crate::error::AppError;
 use crate::provider::{Provider, UsageResult};
 use crate::proxy::types::*;
@@ -112,6 +113,44 @@ async fn ensure_routerteam_recovery_ready(
     }
 
     Ok(())
+}
+
+fn effective_current_provider_id(
+    db: &crate::database::Database,
+    app_type: &str,
+) -> Result<Option<String>, String> {
+    let app_type_enum =
+        AppType::from_str(app_type).map_err(|_| format!("无效的应用类型: {app_type}"))?;
+
+    crate::settings::get_effective_current_provider(db, &app_type_enum)
+        .map_err(|e| e.to_string())
+        .map(|current| current.or_else(|| db.get_current_provider(app_type).ok().flatten()))
+}
+
+fn validate_proxy_switch_target_for_failover(
+    auto_failover_enabled: bool,
+    queue: &[FailoverQueueItem],
+    provider_name: &str,
+    provider_id: &str,
+) -> Result<(), String> {
+    if !auto_failover_enabled {
+        return Ok(());
+    }
+
+    if queue.is_empty() {
+        return Err(
+            "自动故障转移已开启，但故障转移队列为空。请先配置队列，或先关闭自动故障转移。"
+                .to_string(),
+        );
+    }
+
+    if queue.iter().any(|item| item.provider_id == provider_id) {
+        return Ok(());
+    }
+
+    Err(format!(
+        "自动故障转移已开启，只能切换到故障转移队列内的供应商。请先将 {provider_name} 加入队列，或先关闭自动故障转移。"
+    ))
 }
 
 /// 启动代理服务器（仅启动服务，不接管 Live 配置）
@@ -399,6 +438,23 @@ pub async fn switch_proxy_provider(
         );
     }
 
+    let auto_failover_enabled = state
+        .db
+        .get_proxy_config_for_app(&app_type)
+        .await
+        .map(|config| config.auto_failover_enabled)
+        .unwrap_or(false);
+    let queue = state
+        .db
+        .get_failover_queue(&app_type)
+        .map_err(|e| e.to_string())?;
+    validate_proxy_switch_target_for_failover(
+        auto_failover_enabled,
+        &queue,
+        &provider.name,
+        &provider_id,
+    )?;
+
     state
         .proxy_service
         .switch_proxy_target(&app_type, &provider_id)
@@ -458,9 +514,7 @@ pub async fn reset_circuit_breaker(
 
     if app_enabled && auto_failover_enabled && state.proxy_service.is_running().await {
         // 获取当前供应商 ID
-        let current_id = db
-            .get_current_provider(&app_type)
-            .map_err(|e| e.to_string())?;
+        let current_id = effective_current_provider_id(db, &app_type)?;
 
         if let Some(current_id) = current_id {
             // 获取故障转移队列
@@ -558,7 +612,11 @@ pub async fn get_circuit_breaker_stats(
 
 #[cfg(test)]
 mod tests {
-    use super::{is_routerteam_recovery_guard_provider, routerteam_recovery_block_reason};
+    use super::{
+        is_routerteam_recovery_guard_provider, routerteam_recovery_block_reason,
+        validate_proxy_switch_target_for_failover,
+    };
+    use crate::database::FailoverQueueItem;
     use crate::provider::{Provider, ProviderMeta, UsageData, UsageResult, UsageScript};
     use serde_json::json;
 
@@ -712,6 +770,36 @@ mod tests {
                 Some(false)
             )),
             None
+        );
+    }
+
+    fn queue_item(id: &str, sort_index: usize) -> FailoverQueueItem {
+        FailoverQueueItem {
+            provider_id: id.to_string(),
+            provider_name: format!("Provider {id}"),
+            sort_index: Some(sort_index),
+            provider_notes: None,
+        }
+    }
+
+    #[test]
+    fn manual_proxy_switch_requires_queue_membership_when_failover_enabled() {
+        let queue = vec![queue_item("p1", 1), queue_item("p2", 2)];
+
+        assert!(
+            validate_proxy_switch_target_for_failover(true, &queue, "Provider p2", "p2").is_ok()
+        );
+        assert!(
+            validate_proxy_switch_target_for_failover(true, &queue, "Provider p3", "p3").is_err()
+        );
+    }
+
+    #[test]
+    fn manual_proxy_switch_allows_any_target_when_failover_disabled() {
+        let queue = vec![queue_item("p1", 1)];
+        assert!(validate_proxy_switch_target_for_failover(true, &[], "Provider p2", "p2").is_err());
+        assert!(
+            validate_proxy_switch_target_for_failover(false, &queue, "Provider p2", "p2").is_ok()
         );
     }
 }

@@ -648,7 +648,7 @@
     "updating": "更新中...",
     "checking": "检查中...",
     "upToDate": "已是最新",
-    "aboutHint": "查看版本信息与更新状态。",
+    "aboutHint": "查看版本信息与相关链接。",
     "portableMode": "当前为便携版，更新需手动下载。",
     "updateAvailable": "检测到新版本：{{version}}",
     "updateBadge": "有更新可用",
