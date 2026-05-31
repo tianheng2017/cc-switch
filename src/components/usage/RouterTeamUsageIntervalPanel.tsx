@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
-import { Clock3, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -190,43 +190,54 @@ export function RouterTeamUsageIntervalPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-emerald-500/15 bg-emerald-500/5 px-3 py-2">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Clock3 className="h-3.5 w-3.5 text-emerald-500" />
-          <span>{t("usage.routerTeamBatchInterval.intervalHint")}</span>
-        </div>
-      </div>
-
       <div className="rounded-lg border border-border/60 bg-card/40 p-4">
         <div className="space-y-3">
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground/90">
               {t("usage.routerTeamBatchInterval.intervalLabel")}
             </label>
-            <Input
-              type="number"
-              min={0}
-              max={86400}
-              step={1}
-              value={intervalValue}
-              onChange={(event) => {
-                setIntervalValue(event.target.value);
-                if (isMixedInterval) {
-                  setIsMixedInterval(false);
+            <div className="flex flex-col gap-3 md:flex-row md:items-center">
+              <Input
+                type="number"
+                min={0}
+                max={86400}
+                step={1}
+                value={intervalValue}
+                onChange={(event) => {
+                  setIntervalValue(event.target.value);
+                  if (isMixedInterval) {
+                    setIsMixedInterval(false);
+                  }
+                }}
+                placeholder={
+                  isMixedInterval
+                    ? t("usage.routerTeamBatchInterval.mixedPlaceholder")
+                    : "5"
                 }
-              }}
-              placeholder={
-                isMixedInterval
-                  ? t("usage.routerTeamBatchInterval.mixedPlaceholder")
-                  : "5"
-              }
-              className="h-10"
-              disabled={isSavingInterval || isLoadingSettings}
-            />
+                className="h-10 md:flex-1"
+                disabled={isSavingInterval || isLoadingSettings}
+              />
+              <Button
+                onClick={handleSaveInterval}
+                disabled={isSavingInterval || isLoadingSettings || !intervalDirty}
+                className="h-10 min-w-32 md:shrink-0"
+              >
+                {isSavingInterval ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {t("usage.routerTeamBatchInterval.intervalApplying")}
+                  </span>
+                ) : (
+                  t("usage.routerTeamBatchInterval.intervalApply")
+                )}
+              </Button>
+            </div>
           </div>
 
           <p className="text-xs leading-5 text-muted-foreground">
             {t("usage.routerTeamBatchInterval.description")}
+            {" "}
+            {t("usage.routerTeamBatchInterval.intervalHint")}
           </p>
 
           {isMixedInterval && (
@@ -234,23 +245,6 @@ export function RouterTeamUsageIntervalPanel() {
               {t("usage.routerTeamBatchInterval.mixedHint")}
             </p>
           )}
-
-          <div className="flex justify-end pt-1">
-            <Button
-              onClick={handleSaveInterval}
-              disabled={isSavingInterval || isLoadingSettings || !intervalDirty}
-              className="h-10 min-w-32"
-            >
-              {isSavingInterval ? (
-                <span className="inline-flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  {t("usage.routerTeamBatchInterval.intervalApplying")}
-                </span>
-              ) : (
-                t("usage.routerTeamBatchInterval.intervalApply")
-              )}
-            </Button>
-          </div>
         </div>
 
         <div className="mt-5 space-y-3 border-t border-border/50 pt-5">
@@ -258,37 +252,36 @@ export function RouterTeamUsageIntervalPanel() {
             <label className="text-sm font-medium text-foreground/90">
               {t("usage.routerTeamBatchInterval.passwordLabel")}
             </label>
-            <Input
-              type="password"
-              value={passwordValue}
-              onChange={(event) => setPasswordValue(event.target.value)}
-              placeholder={t("usage.routerTeamBatchInterval.passwordPlaceholder")}
-              className="h-10"
-              autoComplete="off"
-              disabled={isSavingPassword || isLoadingSettings}
-            />
+            <div className="flex flex-col gap-3 md:flex-row md:items-center">
+              <Input
+                type="password"
+                value={passwordValue}
+                onChange={(event) => setPasswordValue(event.target.value)}
+                placeholder={t("usage.routerTeamBatchInterval.passwordPlaceholder")}
+                className="h-10 md:flex-1"
+                autoComplete="off"
+                disabled={isSavingPassword || isLoadingSettings}
+              />
+              <Button
+                onClick={handleSavePassword}
+                disabled={isSavingPassword || isLoadingSettings || !passwordDirty}
+                className="h-10 min-w-28 md:shrink-0"
+              >
+                {isSavingPassword ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {t("usage.routerTeamBatchInterval.passwordSaving")}
+                  </span>
+                ) : (
+                  t("usage.routerTeamBatchInterval.passwordApply")
+                )}
+              </Button>
+            </div>
           </div>
 
           <p className="text-xs leading-5 text-muted-foreground">
             {t("usage.routerTeamBatchInterval.passwordHint")}
           </p>
-
-          <div className="flex justify-end pt-1">
-            <Button
-              onClick={handleSavePassword}
-              disabled={isSavingPassword || isLoadingSettings || !passwordDirty}
-              className="h-10 min-w-28"
-            >
-              {isSavingPassword ? (
-                <span className="inline-flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  {t("usage.routerTeamBatchInterval.passwordSaving")}
-                </span>
-              ) : (
-                t("usage.routerTeamBatchInterval.passwordApply")
-              )}
-            </Button>
-          </div>
         </div>
 
         <div className="mt-5 space-y-3 border-t border-border/50 pt-5">
@@ -296,38 +289,39 @@ export function RouterTeamUsageIntervalPanel() {
             <label className="text-sm font-medium text-foreground/90">
               {t("usage.routerTeamBatchInterval.thresholdLabel")}
             </label>
-            <Input
-              type="number"
-              min={0}
-              step="0.01"
-              value={thresholdValue}
-              onChange={(event) => setThresholdValue(event.target.value)}
-              placeholder="0.1"
-              className="h-10"
-              disabled={isSavingThreshold || isLoadingSettings}
-            />
+            <div className="flex flex-col gap-3 md:flex-row md:items-center">
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={thresholdValue}
+                onChange={(event) => setThresholdValue(event.target.value)}
+                placeholder="0.1"
+                className="h-10 md:flex-1"
+                disabled={isSavingThreshold || isLoadingSettings}
+              />
+              <Button
+                onClick={handleSaveThreshold}
+                disabled={
+                  isSavingThreshold || isLoadingSettings || !thresholdDirty
+                }
+                className="h-10 min-w-32 md:shrink-0"
+              >
+                {isSavingThreshold ? (
+                  <span className="inline-flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {t("usage.routerTeamBatchInterval.thresholdSaving")}
+                  </span>
+                ) : (
+                  t("usage.routerTeamBatchInterval.thresholdApply")
+                )}
+              </Button>
+            </div>
           </div>
 
           <p className="text-xs leading-5 text-muted-foreground">
             {t("usage.routerTeamBatchInterval.thresholdHint")}
           </p>
-
-          <div className="flex justify-end pt-1">
-            <Button
-              onClick={handleSaveThreshold}
-              disabled={isSavingThreshold || isLoadingSettings || !thresholdDirty}
-              className="h-10 min-w-32"
-            >
-              {isSavingThreshold ? (
-                <span className="inline-flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  {t("usage.routerTeamBatchInterval.thresholdSaving")}
-                </span>
-              ) : (
-                t("usage.routerTeamBatchInterval.thresholdApply")
-              )}
-            </Button>
-          </div>
         </div>
       </div>
     </div>
