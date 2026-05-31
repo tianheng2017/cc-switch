@@ -197,8 +197,8 @@ export function RouterTeamUsageIntervalPanel() {
         </div>
       </div>
 
-      <div className="space-y-4">
-        <div className="space-y-3 rounded-lg border border-border/60 bg-card/40 p-4">
+      <div className="rounded-lg border border-border/60 bg-card/40 p-4">
+        <div className="space-y-3">
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground/90">
               {t("usage.routerTeamBatchInterval.intervalLabel")}
@@ -253,7 +253,7 @@ export function RouterTeamUsageIntervalPanel() {
           </div>
         </div>
 
-        <div className="space-y-3 rounded-lg border border-border/60 bg-card/40 p-4">
+        <div className="mt-5 space-y-3 border-t border-border/50 pt-5">
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground/90">
               {t("usage.routerTeamBatchInterval.passwordLabel")}
@@ -291,7 +291,7 @@ export function RouterTeamUsageIntervalPanel() {
           </div>
         </div>
 
-        <div className="space-y-3 rounded-lg border border-border/60 bg-card/40 p-4">
+        <div className="mt-5 space-y-3 border-t border-border/50 pt-5">
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground/90">
               {t("usage.routerTeamBatchInterval.thresholdLabel")}
