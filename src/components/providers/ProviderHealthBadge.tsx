@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 interface ProviderHealthBadgeProps {
   consecutiveFailures: number;
   isHealthy?: boolean;
+  forceDegraded?: boolean;
   className?: string;
 }
 
@@ -15,13 +16,32 @@ interface ProviderHealthBadgeProps {
 export function ProviderHealthBadge({
   consecutiveFailures,
   isHealthy,
+  forceDegraded = false,
   className,
 }: ProviderHealthBadgeProps) {
   const { t } = useTranslation();
 
   // 根据失败次数计算状态
   const getStatus = () => {
-    if (consecutiveFailures === 0) {
+    if (isHealthy === false) {
+      return {
+        labelKey: "health.circuitOpen",
+        labelFallback: "熔断",
+        status: ProviderHealthStatus.Failed,
+        color: "bg-red-500",
+        bgColor: "bg-red-500/10",
+        textColor: "text-red-600 dark:text-red-400",
+      };
+    } else if (forceDegraded) {
+      return {
+        labelKey: "health.degraded",
+        labelFallback: "降级",
+        status: ProviderHealthStatus.Degraded,
+        color: "bg-yellow-500",
+        bgColor: "bg-yellow-500/10",
+        textColor: "text-yellow-600 dark:text-yellow-400",
+      };
+    } else if (consecutiveFailures === 0) {
       return {
         labelKey: "health.operational",
         labelFallback: "正常",
@@ -31,7 +51,7 @@ export function ProviderHealthBadge({
         bgColor: "bg-green-500/10",
         textColor: "text-green-600 dark:text-green-400",
       };
-    } else if (isHealthy !== false) {
+    } else {
       return {
         labelKey: "health.degraded",
         labelFallback: "降级",
@@ -39,15 +59,6 @@ export function ProviderHealthBadge({
         color: "bg-yellow-500",
         bgColor: "bg-yellow-500/10",
         textColor: "text-yellow-600 dark:text-yellow-400",
-      };
-    } else {
-      return {
-        labelKey: "health.circuitOpen",
-        labelFallback: "熔断",
-        status: ProviderHealthStatus.Failed,
-        color: "bg-red-500",
-        bgColor: "bg-red-500/10",
-        textColor: "text-red-600 dark:text-red-400",
       };
     }
   };
@@ -65,10 +76,16 @@ export function ProviderHealthBadge({
         statusConfig.textColor,
         className,
       )}
-      title={t("health.consecutiveFailures", {
-        count: consecutiveFailures,
-        defaultValue: `连续失败 ${consecutiveFailures} 次`,
-      })}
+      title={
+        forceDegraded
+          ? t("health.usageGuardTriggered", {
+              defaultValue: "用量阈值触发降级",
+            })
+          : t("health.consecutiveFailures", {
+              count: consecutiveFailures,
+              defaultValue: `连续失败 ${consecutiveFailures} 次`,
+            })
+      }
     >
       <div className={cn("w-2 h-2 rounded-full", statusConfig.color)} />
       <span>{label}</span>

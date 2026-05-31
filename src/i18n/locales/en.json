@@ -1448,14 +1448,36 @@
     "tip3": "• Entire config must be wrapped in () to form object literal expression",
     "routerTeamBatchInterval": {
       "title": "RouterTeam bulk settings",
+      "cardDescription": "Manage RouterTeam auto-query intervals, startup login password, and degraded threshold",
       "description": "Batch update usage-query auto interval for providers whose name contains RouterTeam",
       "intervalLabel": "Auto query interval (seconds)",
       "intervalHint": "Supports 0-86400 seconds. Use 0 to disable auto query.",
+      "passwordLabel": "Startup login password",
+      "passwordPlaceholder": "Enter the RouterTeam login password",
+      "passwordHint": "Used when the app logs into RouterTeam accounts on startup. Clear it and save the password to disable startup bulk login.",
+      "mixedPlaceholder": "Mixed values",
+      "mixedHint": "RouterTeam providers currently use different auto-query intervals. Enter one unified value before applying the interval update.",
+      "intervalApply": "Apply interval in bulk",
+      "intervalApplying": "Applying interval",
+      "intervalUpdated": "Updated the auto-query interval for {{count}} RouterTeam providers",
+      "intervalUpdateFailed": "Failed to update interval: {{error}}",
+      "passwordApply": "Save password",
+      "passwordSaving": "Saving password",
+      "passwordUpdated": "Startup login password saved",
+      "passwordUpdateFailed": "Failed to save password: {{error}}",
+      "thresholdLabel": "Degraded threshold (5h / weekly)",
+      "thresholdHint": "If either the 5-hour remaining quota or the weekly remaining quota is less than or equal to this value, RouterTeam will be treated as degraded. This also refreshes the saved usage script and recovery/failover checks.",
+      "thresholdApply": "Save threshold",
+      "thresholdSaving": "Saving threshold",
+      "thresholdUpdated": "Saved the RouterTeam degraded threshold and refreshed {{count}} related scripts",
+      "thresholdUpdateFailed": "Failed to save threshold: {{error}}",
+      "invalidThreshold": "Enter a valid threshold greater than or equal to 0",
       "apply": "Apply in bulk",
       "applying": "Applying",
       "invalidInterval": "Enter an integer number of seconds between 0 and 86400",
-      "updated": "Updated {{count}} RouterTeam providers",
-      "updateFailed": "Bulk update failed: {{error}}"
+      "updated": "Updated {{count}} RouterTeam providers and saved the startup login setting",
+      "updateFailed": "Bulk update failed: {{error}}",
+      "loadFailed": "Failed to load RouterTeam bulk settings: {{error}}"
     }
   },
   "errors": {
@@ -2183,12 +2205,13 @@
     "testProvider": "Test model"
   },
   "health": {
-    "operational": "Operational",
-    "degraded": "Degraded",
-    "failed": "Failed",
-    "circuitOpen": "Circuit Open",
-    "consecutiveFailures": "{{count}} consecutive failures"
-  },
+      "operational": "Operational",
+      "degraded": "Degraded",
+      "failed": "Failed",
+      "circuitOpen": "Circuit Open",
+      "consecutiveFailures": "{{count}} consecutive failures",
+      "usageGuardTriggered": "Usage threshold triggered degradation"
+    },
   "failover": {
     "enabled": "{{app}} failover enabled",
     "disabled": "{{app}} failover disabled",

@@ -1,4 +1,5 @@
 use indexmap::IndexMap;
+use std::collections::BTreeSet;
 use tauri::{Emitter, State};
 
 use crate::app_config::AppType;
@@ -18,6 +19,15 @@ const TEMPLATE_TYPE_BALANCE: &str = "balance";
 const COPILOT_UNIT_PREMIUM: &str = "requests";
 const ROUTERTEAM_NAME_MARKER: &str = "RouterTeam";
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouterTeamUsageBatchSettings {
+    pub password: String,
+    pub interval_secs: Option<u64>,
+    pub mixed_interval: bool,
+    pub degraded_threshold: f64,
+}
+
 fn apply_routerteam_usage_interval(provider: &mut Provider, interval_secs: u64) -> bool {
     if !provider.name.contains(ROUTERTEAM_NAME_MARKER) {
         return false;
@@ -36,6 +46,84 @@ fn apply_routerteam_usage_interval(provider: &mut Provider, interval_secs: u64) 
 
     usage_script.auto_query_interval = Some(interval_secs);
     true
+}
+
+fn routerteam_usage_interval(provider: &Provider) -> Option<u64> {
+    if !provider.name.contains(ROUTERTEAM_NAME_MARKER) {
+        return None;
+    }
+
+    provider
+        .meta
+        .as_ref()?
+        .usage_script
+        .as_ref()
+        .map(|usage_script| usage_script.auto_query_interval.unwrap_or(0))
+}
+
+fn summarize_routerteam_usage_interval(
+    intervals: impl IntoIterator<Item = u64>,
+) -> (Option<u64>, bool) {
+    let distinct: BTreeSet<u64> = intervals.into_iter().collect();
+    match distinct.len() {
+        0 => (None, false),
+        1 => (distinct.iter().next().copied(), false),
+        _ => (None, true),
+    }
+}
+
+fn get_routerteam_usage_batch_interval_settings(
+    state: &AppState,
+) -> Result<(Option<u64>, bool), AppError> {
+    let mut intervals = Vec::new();
+
+    for app_type in AppType::all() {
+        let providers = state.db.get_all_providers(app_type.as_str())?;
+        intervals.extend(
+            providers
+                .into_values()
+                .filter_map(|provider| routerteam_usage_interval(&provider)),
+        );
+    }
+
+    Ok(summarize_routerteam_usage_interval(intervals))
+}
+
+fn bulk_update_routerteam_usage_query_interval_inner(
+    state: &AppState,
+    interval_secs: u64,
+) -> Result<usize, String> {
+    if interval_secs > 86_400 {
+        return Err("自动查询间隔不能超过 86400 秒".to_string());
+    }
+
+    let mut updated = 0usize;
+
+    for app_type in AppType::all() {
+        let providers = state
+            .db
+            .get_all_providers(app_type.as_str())
+            .map_err(|e| format!("Failed to get providers for {}: {e}", app_type.as_str()))?;
+
+        for (_, mut provider) in providers {
+            if !apply_routerteam_usage_interval(&mut provider, interval_secs) {
+                continue;
+            }
+            state
+                .db
+                .save_provider(app_type.as_str(), &provider)
+                .map_err(|e| {
+                    format!(
+                        "Failed to save provider '{}' for {}: {e}",
+                        provider.name,
+                        app_type.as_str()
+                    )
+                })?;
+            updated += 1;
+        }
+    }
+
+    Ok(updated)
 }
 
 async fn maybe_failover_on_usage_guard(
@@ -59,14 +147,8 @@ async fn maybe_failover_on_usage_guard(
         return Ok(());
     }
 
-    let current_provider_id = crate::settings::get_effective_current_provider(&state.db, app_type)?
-        .or_else(|| {
-            state
-                .db
-                .get_current_provider(app_type.as_str())
-                .ok()
-                .flatten()
-        });
+    let current_provider_id =
+        resolve_usage_failover_source_provider_id(state, app_type, config.enabled).await?;
 
     if current_provider_id.as_deref() != Some(provider_id) {
         log::debug!(
@@ -133,6 +215,34 @@ async fn maybe_failover_on_usage_guard(
     Ok(())
 }
 
+async fn resolve_usage_failover_source_provider_id(
+    state: &AppState,
+    app_type: &AppType,
+    proxy_enabled: bool,
+) -> Result<Option<String>, AppError> {
+    if proxy_enabled {
+        if let Ok(status) = state.proxy_service.get_status().await {
+            if let Some(active_target) = status
+                .active_targets
+                .iter()
+                .find(|target| target.app_type == app_type.as_str())
+            {
+                return Ok(Some(active_target.provider_id.clone()));
+            }
+        }
+    }
+
+    Ok(
+        crate::settings::get_effective_current_provider(&state.db, app_type)?.or_else(|| {
+            state
+                .db
+                .get_current_provider(app_type.as_str())
+                .ok()
+                .flatten()
+        }),
+    )
+}
+
 /// 获取所有供应商
 #[tauri::command]
 pub fn get_providers(
@@ -154,37 +264,73 @@ pub fn bulk_update_routerteam_usage_query_interval(
     state: State<'_, AppState>,
     interval_secs: u64,
 ) -> Result<usize, String> {
-    if interval_secs > 86_400 {
-        return Err("自动查询间隔不能超过 86400 秒".to_string());
-    }
+    bulk_update_routerteam_usage_query_interval_inner(state.inner(), interval_secs)
+}
 
-    let mut updated = 0usize;
+#[tauri::command]
+pub fn get_routerteam_usage_batch_settings(
+    state: State<'_, AppState>,
+) -> Result<RouterTeamUsageBatchSettings, String> {
+    let password = crate::services::routerteam_usage_refresh::load_routerteam_usage_login_password(
+        state.db.as_ref(),
+    )
+    .map_err(|e| e.to_string())?;
+    let degraded_threshold =
+        crate::services::routerteam_usage_refresh::load_routerteam_usage_degraded_threshold(
+            state.db.as_ref(),
+        )
+        .map_err(|e| e.to_string())?;
+    let (interval_secs, mixed_interval) =
+        get_routerteam_usage_batch_interval_settings(state.inner()).map_err(|e| e.to_string())?;
 
-    for app_type in AppType::all() {
-        let providers = state
-            .db
-            .get_all_providers(app_type.as_str())
-            .map_err(|e| format!("Failed to get providers for {}: {e}", app_type.as_str()))?;
+    Ok(RouterTeamUsageBatchSettings {
+        password: password.unwrap_or_default(),
+        interval_secs,
+        mixed_interval,
+        degraded_threshold,
+    })
+}
 
-        for (_, mut provider) in providers {
-            if !apply_routerteam_usage_interval(&mut provider, interval_secs) {
-                continue;
-            }
-            state
-                .db
-                .save_provider(app_type.as_str(), &provider)
-                .map_err(|e| {
-                    format!(
-                        "Failed to save provider '{}' for {}: {e}",
-                        provider.name,
-                        app_type.as_str()
-                    )
-                })?;
-            updated += 1;
-        }
-    }
+#[tauri::command]
+pub fn save_routerteam_usage_batch_settings(
+    state: State<'_, AppState>,
+    interval_secs: u64,
+    password: String,
+) -> Result<usize, String> {
+    let updated = bulk_update_routerteam_usage_query_interval_inner(state.inner(), interval_secs)?;
+    state
+        .db
+        .set_routerteam_usage_login_password(Some(&password))
+        .map_err(|e| format!("Failed to save RouterTeam usage login password: {e}"))?;
 
     Ok(updated)
+}
+
+#[tauri::command]
+pub fn save_routerteam_usage_login_password(
+    state: State<'_, AppState>,
+    password: String,
+) -> Result<(), String> {
+    state
+        .db
+        .set_routerteam_usage_login_password(Some(&password))
+        .map_err(|e| format!("Failed to save RouterTeam usage login password: {e}"))
+}
+
+#[tauri::command]
+pub fn save_routerteam_usage_degraded_threshold(
+    state: State<'_, AppState>,
+    threshold: f64,
+) -> Result<usize, String> {
+    state
+        .db
+        .set_routerteam_usage_degraded_threshold(threshold)
+        .map_err(|e| format!("Failed to save RouterTeam usage degraded threshold: {e}"))?;
+
+    crate::services::routerteam_usage_refresh::reapply_routerteam_usage_degraded_threshold(
+        state.db.as_ref(),
+    )
+    .map_err(|e| format!("Failed to reapply RouterTeam usage degraded threshold: {e}"))
 }
 
 #[tauri::command]
@@ -933,7 +1079,10 @@ pub fn get_opencode_live_provider_ids() -> Result<Vec<String>, String> {
 
 #[cfg(test)]
 mod routerteam_usage_interval_tests {
-    use super::apply_routerteam_usage_interval;
+    use super::{
+        apply_routerteam_usage_interval, routerteam_usage_interval,
+        summarize_routerteam_usage_interval,
+    };
     use crate::provider::{Provider, ProviderMeta, UsageScript};
     use serde_json::json;
 
@@ -994,6 +1143,29 @@ mod routerteam_usage_interval_tests {
                 .and_then(|meta| meta.usage_script.as_ref())
                 .and_then(|script| script.auto_query_interval),
             Some(5)
+        );
+    }
+
+    #[test]
+    fn routerteam_usage_interval_reads_zero_when_missing_interval() {
+        let provider = make_provider("RouterTeam-demo@example.com", None);
+
+        assert_eq!(routerteam_usage_interval(&provider), Some(0));
+    }
+
+    #[test]
+    fn summarize_routerteam_usage_interval_reports_single_value() {
+        assert_eq!(
+            summarize_routerteam_usage_interval([30_u64, 30, 30]),
+            (Some(30), false)
+        );
+    }
+
+    #[test]
+    fn summarize_routerteam_usage_interval_reports_mixed_values() {
+        assert_eq!(
+            summarize_routerteam_usage_interval([5_u64, 30]),
+            (None, true)
         );
     }
 }

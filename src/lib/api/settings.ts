@@ -18,6 +18,13 @@ export interface WebDavSyncResult {
   status: string;
 }
 
+export interface RouterTeamUsageBatchSettings {
+  password: string;
+  intervalSecs: number | null;
+  mixedInterval: boolean;
+  degradedThreshold: number;
+}
+
 export const settingsApi = {
   async get(): Promise<Settings> {
     return await invoke("get_settings");
@@ -241,6 +248,34 @@ export const settingsApi = {
   ): Promise<number> {
     return await invoke("bulk_update_routerteam_usage_query_interval", {
       intervalSecs,
+    });
+  },
+
+  async getRouterTeamUsageBatchSettings(): Promise<RouterTeamUsageBatchSettings> {
+    return await invoke("get_routerteam_usage_batch_settings");
+  },
+
+  async saveRouterTeamUsageBatchSettings(
+    intervalSecs: number,
+    password: string,
+  ): Promise<number> {
+    return await invoke("save_routerteam_usage_batch_settings", {
+      intervalSecs,
+      password,
+    });
+  },
+
+  async saveRouterTeamUsageLoginPassword(password: string): Promise<void> {
+    await invoke("save_routerteam_usage_login_password", {
+      password,
+    });
+  },
+
+  async saveRouterTeamUsageDegradedThreshold(
+    threshold: number,
+  ): Promise<number> {
+    return await invoke("save_routerteam_usage_degraded_threshold", {
+      threshold,
     });
   },
 };

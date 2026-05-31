@@ -1368,14 +1368,36 @@
     "cacheCreationCostPerMillion": "缓存写入成本 (每百万 tokens, USD)",
     "routerTeamBatchInterval": {
       "title": "RouterTeam 批量设置",
+      "cardDescription": "管理 RouterTeam 的自动查询间隔、启动登录密码和降级阈值",
       "description": "批量更新名称包含 RouterTeam 的供应商用量查询自动间隔",
       "intervalLabel": "自动查询间隔（秒）",
       "intervalHint": "支持 0-86400 秒，0 表示禁用自动查询",
+      "passwordLabel": "启动登录密码",
+      "passwordPlaceholder": "输入 RouterTeam 登录密码",
+      "passwordHint": "启动时批量登录 RouterTeam 账号时使用。清空后点击“保存密码”会禁用启动批量登录。",
+      "mixedPlaceholder": "当前值不一致",
+      "mixedHint": "当前 RouterTeam 供应商的自动查询间隔并不一致。输入新的统一值后再点击“批量应用间隔”。",
+      "intervalApply": "批量应用间隔",
+      "intervalApplying": "应用间隔中",
+      "intervalUpdated": "已更新 {{count}} 个 RouterTeam 供应商的自动查询间隔",
+      "intervalUpdateFailed": "间隔更新失败：{{error}}",
+      "passwordApply": "保存密码",
+      "passwordSaving": "保存密码中",
+      "passwordUpdated": "启动登录密码已保存",
+      "passwordUpdateFailed": "密码保存失败：{{error}}",
+      "thresholdLabel": "降级阈值（5小时 / 本周）",
+      "thresholdHint": "当 5 小时剩余或本周剩余任意一个小于等于该值时，会判定为降级。该设置会同步更新 RouterTeam 用量脚本、恢复判断和故障转移相关状态。",
+      "thresholdApply": "保存阈值",
+      "thresholdSaving": "保存阈值中",
+      "thresholdUpdated": "已更新 RouterTeam 用量降级阈值，并同步刷新 {{count}} 个相关脚本",
+      "thresholdUpdateFailed": "阈值保存失败：{{error}}",
+      "invalidThreshold": "请输入大于等于 0 的有效阈值",
       "apply": "批量应用",
       "applying": "应用中",
       "invalidInterval": "请输入 0-86400 之间的整数秒数",
-      "updated": "已更新 {{count}} 个 RouterTeam 供应商",
-      "updateFailed": "批量更新失败：{{error}}"
+      "updated": "已更新 {{count}} 个 RouterTeam 供应商，并保存启动登录配置",
+      "updateFailed": "批量更新失败：{{error}}",
+      "loadFailed": "读取 RouterTeam 批量设置失败：{{error}}"
     }
   },
   "usageScript": {
@@ -2183,12 +2205,13 @@
     "testProvider": "测试模型"
   },
   "health": {
-    "operational": "正常",
-    "degraded": "降级",
-    "failed": "失败",
-    "circuitOpen": "熔断",
-    "consecutiveFailures": "连续失败 {{count}} 次"
-  },
+      "operational": "正常",
+      "degraded": "降级",
+      "failed": "失败",
+      "circuitOpen": "熔断",
+      "consecutiveFailures": "连续失败 {{count}} 次",
+      "usageGuardTriggered": "用量阈值触发降级"
+    },
   "failover": {
     "enabled": "{{app}} 故障转移已启用",
     "disabled": "{{app}} 故障转移已关闭",

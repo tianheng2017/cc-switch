@@ -8,6 +8,10 @@ use rusqlite::params;
 
 impl Database {
     const LEGACY_COMMON_CONFIG_MIGRATED_KEY: &'static str = "common_config_legacy_migrated_v1";
+    const ROUTERTEAM_USAGE_LOGIN_PASSWORD_KEY: &'static str = "routerteam_usage_login_password";
+    const ROUTERTEAM_USAGE_DEGRADED_THRESHOLD_KEY: &'static str =
+        "routerteam_usage_degraded_threshold";
+    const ROUTERTEAM_USAGE_DEGRADED_THRESHOLD_DEFAULT: f64 = 0.1;
 
     fn config_snippet_cleared_key(app_type: &str) -> String {
         format!("common_config_{app_type}_cleared")
@@ -54,6 +58,62 @@ impl Database {
         )
         .map_err(|e| AppError::Database(e.to_string()))?;
         Ok(())
+    }
+
+    /// 获取 RouterTeam 启动批量登录使用的密码。
+    ///
+    /// 返回 None 表示未配置自定义值，应由调用方回退到默认密码。
+    pub fn get_routerteam_usage_login_password(&self) -> Result<Option<String>, AppError> {
+        Ok(self
+            .get_setting(Self::ROUTERTEAM_USAGE_LOGIN_PASSWORD_KEY)?
+            .and_then(|value| {
+                let trimmed = value.trim();
+                (!trimmed.is_empty()).then(|| trimmed.to_string())
+            }))
+    }
+
+    /// 设置 RouterTeam 启动批量登录使用的密码。
+    ///
+    /// 传入 None 或空字符串会清除自定义值，恢复调用方的默认密码回退逻辑。
+    pub fn set_routerteam_usage_login_password(
+        &self,
+        password: Option<&str>,
+    ) -> Result<(), AppError> {
+        match password.map(str::trim).filter(|value| !value.is_empty()) {
+            Some(password) => self.set_setting(Self::ROUTERTEAM_USAGE_LOGIN_PASSWORD_KEY, password),
+            None => {
+                let conn = lock_conn!(self.conn);
+                conn.execute(
+                    "DELETE FROM settings WHERE key = ?1",
+                    params![Self::ROUTERTEAM_USAGE_LOGIN_PASSWORD_KEY],
+                )
+                .map_err(|e| AppError::Database(e.to_string()))?;
+                Ok(())
+            }
+        }
+    }
+
+    /// 获取 RouterTeam 用量降级阈值。
+    pub fn get_routerteam_usage_degraded_threshold(&self) -> Result<f64, AppError> {
+        Ok(self
+            .get_setting(Self::ROUTERTEAM_USAGE_DEGRADED_THRESHOLD_KEY)?
+            .and_then(|value| value.trim().parse::<f64>().ok())
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .unwrap_or(Self::ROUTERTEAM_USAGE_DEGRADED_THRESHOLD_DEFAULT))
+    }
+
+    /// 设置 RouterTeam 用量降级阈值。
+    pub fn set_routerteam_usage_degraded_threshold(&self, threshold: f64) -> Result<(), AppError> {
+        if !threshold.is_finite() || threshold < 0.0 {
+            return Err(AppError::Database(
+                "RouterTeam 用量降级阈值必须是大于等于 0 的有限数字".to_string(),
+            ));
+        }
+
+        self.set_setting(
+            Self::ROUTERTEAM_USAGE_DEGRADED_THRESHOLD_KEY,
+            &threshold.to_string(),
+        )
     }
 
     // --- 通用配置片段 (Common Config Snippet) ---
@@ -323,5 +383,64 @@ impl Database {
         let json = serde_json::to_string(config)
             .map_err(|e| AppError::Database(format!("序列化日志配置失败: {e}")))?;
         self.set_setting("log_config", &json)
+    }
+}
+
+#[cfg(test)]
+mod routerteam_usage_login_password_tests {
+    use crate::database::Database;
+
+    #[test]
+    fn routerteam_usage_login_password_round_trips() {
+        let db = Database::memory().expect("memory db");
+
+        db.set_routerteam_usage_login_password(Some("custom-password"))
+            .expect("set password");
+
+        assert_eq!(
+            db.get_routerteam_usage_login_password()
+                .expect("get password")
+                .as_deref(),
+            Some("custom-password")
+        );
+    }
+
+    #[test]
+    fn routerteam_usage_login_password_treats_blank_as_unset() {
+        let db = Database::memory().expect("memory db");
+
+        db.set_routerteam_usage_login_password(Some("   "))
+            .expect("clear password");
+
+        assert_eq!(
+            db.get_routerteam_usage_login_password()
+                .expect("get password"),
+            None
+        );
+    }
+
+    #[test]
+    fn routerteam_usage_degraded_threshold_defaults_to_point_one() {
+        let db = Database::memory().expect("memory db");
+
+        assert_eq!(
+            db.get_routerteam_usage_degraded_threshold()
+                .expect("get threshold"),
+            0.1
+        );
+    }
+
+    #[test]
+    fn routerteam_usage_degraded_threshold_round_trips() {
+        let db = Database::memory().expect("memory db");
+
+        db.set_routerteam_usage_degraded_threshold(0.25)
+            .expect("set threshold");
+
+        assert_eq!(
+            db.get_routerteam_usage_degraded_threshold()
+                .expect("get threshold"),
+            0.25
+        );
     }
 }

@@ -1394,14 +1394,36 @@
     "tip3": "• 整個設定必須用 () 包覆，形成物件實字運算式",
     "routerTeamBatchInterval": {
       "title": "RouterTeam 批次設定",
+      "cardDescription": "管理 RouterTeam 的自動查詢間隔、啟動登入密碼與降級閾值",
       "description": "批次更新名稱包含 RouterTeam 的供應商用量查詢自動間隔",
       "intervalLabel": "自動查詢間隔（秒）",
       "intervalHint": "支援 0-86400 秒，0 表示停用自動查詢",
+      "passwordLabel": "啟動登入密碼",
+      "passwordPlaceholder": "輸入 RouterTeam 登入密碼",
+      "passwordHint": "啟動時批次登入 RouterTeam 帳號時使用。清空後按「儲存密碼」會停用啟動批次登入。",
+      "mixedPlaceholder": "目前值不一致",
+      "mixedHint": "目前 RouterTeam 供應商的自動查詢間隔不一致。請輸入新的統一值後再按「批次套用間隔」。",
+      "intervalApply": "批次套用間隔",
+      "intervalApplying": "套用間隔中",
+      "intervalUpdated": "已更新 {{count}} 個 RouterTeam 供應商的自動查詢間隔",
+      "intervalUpdateFailed": "間隔更新失敗：{{error}}",
+      "passwordApply": "儲存密碼",
+      "passwordSaving": "儲存密碼中",
+      "passwordUpdated": "啟動登入密碼已儲存",
+      "passwordUpdateFailed": "密碼儲存失敗：{{error}}",
+      "thresholdLabel": "降級閾值（5小時 / 本週）",
+      "thresholdHint": "當 5 小時剩餘或本週剩餘任一個小於等於該值時，會判定為降級。此設定也會同步更新 RouterTeam 用量腳本、恢復判斷與故障轉移相關狀態。",
+      "thresholdApply": "儲存閾值",
+      "thresholdSaving": "儲存閾值中",
+      "thresholdUpdated": "已儲存 RouterTeam 用量降級閾值，並同步刷新 {{count}} 個相關腳本",
+      "thresholdUpdateFailed": "閾值儲存失敗：{{error}}",
+      "invalidThreshold": "請輸入大於等於 0 的有效閾值",
       "apply": "批次套用",
       "applying": "套用中",
       "invalidInterval": "請輸入 0-86400 之間的整數秒數",
-      "updated": "已更新 {{count}} 個 RouterTeam 供應商",
-      "updateFailed": "批次更新失敗：{{error}}"
+      "updated": "已更新 {{count}} 個 RouterTeam 供應商，並儲存啟動登入設定",
+      "updateFailed": "批次更新失敗：{{error}}",
+      "loadFailed": "讀取 RouterTeam 批次設定失敗：{{error}}"
     }
   },
   "errors": {
@@ -2129,12 +2151,13 @@
     "testProvider": "測試模型"
   },
   "health": {
-    "operational": "正常",
-    "degraded": "降級",
-    "failed": "失敗",
-    "circuitOpen": "斷路",
-    "consecutiveFailures": "連續失敗 {{count}} 次"
-  },
+      "operational": "正常",
+      "degraded": "降級",
+      "failed": "失敗",
+      "circuitOpen": "斷路",
+      "consecutiveFailures": "連續失敗 {{count}} 次",
+      "usageGuardTriggered": "用量閾值觸發降級"
+    },
   "failover": {
     "enabled": "{{app}} 故障轉移已啟用",
     "disabled": "{{app}} 故障轉移已關閉",

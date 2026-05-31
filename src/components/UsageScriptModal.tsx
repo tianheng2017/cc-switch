@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Play, Wand2, Eye, EyeOff, Save } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
@@ -58,6 +58,7 @@ const normalizeUsageScriptAutoInterval = (script: UsageScript): UsageScript => {
 // 生成预设模板的函数（支持国际化）
 const generatePresetTemplates = (
   t: (key: string) => string,
+  routerteamDegradedThreshold: number,
 ): Record<string, string> => ({
   [TEMPLATE_TYPES.CUSTOM]: `({
   request: {
@@ -90,8 +91,8 @@ const generatePresetTemplates = (
   extractor: function (response) {
     return {
       isValid:
-        response.quota.windowRemainingQuota > 0.1 &&
-        response.quota.weeklyRemainingQuota > 0.1,
+        response.quota.windowRemainingQuota > ${routerteamDegradedThreshold} &&
+        response.quota.weeklyRemainingQuota > ${routerteamDegradedThreshold},
       windowRemainingQuota: response.quota.windowRemainingQuota,
       total: response.quota.windowLimit,
       weeklyRemainingQuota: response.quota.weeklyRemainingQuota,
@@ -179,9 +180,37 @@ const UsageScriptModal: React.FC<UsageScriptModalProps> = ({
   const queryClient = useQueryClient();
   const { data: settingsData } = useSettingsQuery();
   const [showUsageConfirm, setShowUsageConfirm] = useState(false);
+  const [routerteamDegradedThreshold, setRouterteamDegradedThreshold] =
+    useState(0.1);
+
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    let active = true;
+
+    void settingsApi
+      .getRouterTeamUsageBatchSettings()
+      .then((settings) => {
+        if (active) {
+          setRouterteamDegradedThreshold(settings.degradedThreshold);
+        }
+      })
+      .catch(() => {
+        // 使用默认阈值回退；不在这里打断配置弹窗。
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isOpen]);
 
   // 生成带国际化的预设模板
-  const PRESET_TEMPLATES = generatePresetTemplates(t);
+  const PRESET_TEMPLATES = useMemo(
+    () => generatePresetTemplates(t, routerteamDegradedThreshold),
+    [routerteamDegradedThreshold, t],
+  );
 
   // 从 provider 的 settingsConfig 中提取 API Key 和 Base URL
   const getProviderCredentials = (): {

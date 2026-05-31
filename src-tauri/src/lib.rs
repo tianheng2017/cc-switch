@@ -536,13 +536,27 @@ pub fn run() {
                     app_state.db.as_ref(),
                 ),
             ) {
-                Ok(count) if count > 0 => {
+                Ok(crate::services::routerteam_usage_refresh::RouterTeamUsageRefreshOutcome::Updated(count))
+                    if count > 0 =>
+                {
                     log::info!(
                         "✓ Refreshed RouterTeam Codex usage-script config for {count} provider(s)"
                     );
                 }
-                Ok(_) => {
+                Ok(crate::services::routerteam_usage_refresh::RouterTeamUsageRefreshOutcome::Updated(_)) => {
+                    log::debug!(
+                        "○ RouterTeam Codex usage-script refresh completed without successful provider updates"
+                    );
+                }
+                Ok(crate::services::routerteam_usage_refresh::RouterTeamUsageRefreshOutcome::NoTargets) => {
                     log::debug!("○ No RouterTeam Codex providers required usage-script refresh");
+                }
+                Ok(crate::services::routerteam_usage_refresh::RouterTeamUsageRefreshOutcome::SkippedMissingPassword {
+                    target_count,
+                }) => {
+                    log::warn!(
+                        "○ RouterTeam Codex usage-script refresh skipped because startup login password is empty; {target_count} provider(s) left unchanged"
+                    );
                 }
                 Err(e) => {
                     log::warn!(
@@ -1106,6 +1120,10 @@ pub fn run() {
             commands::get_providers,
             commands::get_current_provider,
             commands::bulk_update_routerteam_usage_query_interval,
+            commands::get_routerteam_usage_batch_settings,
+            commands::save_routerteam_usage_batch_settings,
+            commands::save_routerteam_usage_login_password,
+            commands::save_routerteam_usage_degraded_threshold,
             commands::add_provider,
             commands::update_provider,
             commands::delete_provider,

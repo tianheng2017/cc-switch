@@ -38,7 +38,18 @@ fn is_routerteam_recovery_guard_provider(provider: &Provider) -> bool {
             && usage_script.code.contains(ROUTERTEAM_QUOTA_PATH))
 }
 
-fn routerteam_recovery_block_reason(result: &UsageResult) -> Option<String> {
+fn format_routerteam_threshold(value: f64) -> String {
+    let mut formatted = format!("{value:.4}");
+    while formatted.ends_with('0') {
+        formatted.pop();
+    }
+    if formatted.ends_with('.') {
+        formatted.pop();
+    }
+    formatted
+}
+
+fn routerteam_recovery_block_reason(result: &UsageResult, threshold: f64) -> Option<String> {
     if !result.success {
         return Some(
             result
@@ -55,7 +66,7 @@ fn routerteam_recovery_block_reason(result: &UsageResult) -> Option<String> {
     let Some(window_remaining_quota) = usage.window_remaining_quota else {
         return Some("缺少 5 小时剩余额度".to_string());
     };
-    if window_remaining_quota <= 0.1 {
+    if window_remaining_quota <= threshold {
         return Some(format!(
             "5 小时剩余不足（当前 {:.2}）",
             window_remaining_quota
@@ -65,7 +76,7 @@ fn routerteam_recovery_block_reason(result: &UsageResult) -> Option<String> {
     let Some(weekly_remaining_quota) = usage.weekly_remaining_quota else {
         return Some("缺少本周剩余额度".to_string());
     };
-    if weekly_remaining_quota <= 0.1 {
+    if weekly_remaining_quota <= threshold {
         return Some(format!(
             "本周剩余不足（当前 {:.2}）",
             weekly_remaining_quota
@@ -105,10 +116,16 @@ async fn ensure_routerteam_recovery_ready(
     let usage = crate::services::ProviderService::query_usage(state, app_type_enum, provider_id)
         .await
         .map_err(|e| e.to_string())?;
+    let threshold = state
+        .db
+        .get_routerteam_usage_degraded_threshold()
+        .map_err(|e| e.to_string())?;
 
-    if let Some(reason) = routerteam_recovery_block_reason(&usage) {
+    if let Some(reason) = routerteam_recovery_block_reason(&usage, threshold) {
         return Err(format!(
-            "RouterTeam 恢复条件未满足，维持当前故障状态：{reason}。需要同时满足 5小时 > 0.1、本周 > 0.1。"
+            "RouterTeam 恢复条件未满足，维持当前故障状态：{reason}。需要同时满足 5小时 > {}、本周 > {}。",
+            format_routerteam_threshold(threshold),
+            format_routerteam_threshold(threshold)
         ));
     }
 
@@ -732,43 +749,38 @@ mod tests {
     #[test]
     fn routerteam_recovery_requires_quota_thresholds_only() {
         assert_eq!(
-            routerteam_recovery_block_reason(&routerteam_usage_result(
-                0.05,
-                2.0,
-                Some(3.0),
-                Some(false)
-            )),
+            routerteam_recovery_block_reason(
+                &routerteam_usage_result(0.05, 2.0, Some(3.0), Some(false)),
+                0.1
+            ),
             Some("5 小时剩余不足（当前 0.05）".to_string())
         );
         assert_eq!(
-            routerteam_recovery_block_reason(&routerteam_usage_result(
-                2.0,
-                0.05,
-                Some(3.0),
-                Some(false)
-            )),
+            routerteam_recovery_block_reason(
+                &routerteam_usage_result(2.0, 0.05, Some(3.0), Some(false)),
+                0.1
+            ),
             Some("本周剩余不足（当前 0.05）".to_string())
         );
         assert_eq!(
-            routerteam_recovery_block_reason(&routerteam_usage_result(
-                2.0,
-                3.0,
-                Some(0.05),
-                Some(false)
-            )),
+            routerteam_recovery_block_reason(
+                &routerteam_usage_result(2.0, 3.0, Some(0.05), Some(false)),
+                0.1
+            ),
             None
         );
         assert_eq!(
-            routerteam_recovery_block_reason(&routerteam_usage_result(2.0, 3.0, None, Some(true))),
+            routerteam_recovery_block_reason(
+                &routerteam_usage_result(2.0, 3.0, None, Some(true)),
+                0.1
+            ),
             None
         );
         assert_eq!(
-            routerteam_recovery_block_reason(&routerteam_usage_result(
-                2.0,
-                3.0,
-                Some(5.0),
-                Some(false)
-            )),
+            routerteam_recovery_block_reason(
+                &routerteam_usage_result(2.0, 3.0, Some(5.0), Some(false)),
+                0.1
+            ),
             None
         );
     }

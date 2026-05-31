@@ -1448,14 +1448,36 @@
     "tip3": "• 全体を () で囲み、オブジェクトリテラル式にしてください",
     "routerTeamBatchInterval": {
       "title": "RouterTeam 一括設定",
+      "cardDescription": "RouterTeam の自動照会間隔、起動時ログインパスワード、低下しきい値を管理します",
       "description": "名前に RouterTeam を含むプロバイダーの利用照会自動間隔を一括更新します",
       "intervalLabel": "自動照会間隔（秒）",
       "intervalHint": "0-86400 秒を指定できます。0 は自動照会を無効化します",
+      "passwordLabel": "起動時ログインパスワード",
+      "passwordPlaceholder": "RouterTeam のログインパスワードを入力",
+      "passwordHint": "アプリ起動時に RouterTeam アカウントへ一括ログインするときに使います。空欄にしてパスワードを保存すると起動時の一括ログインを無効化します。",
+      "mixedPlaceholder": "現在の値が一致していません",
+      "mixedHint": "現在、RouterTeam プロバイダーごとに自動照会間隔が一致していません。新しい統一値を入力してから間隔を一括適用してください。",
+      "intervalApply": "間隔を一括適用",
+      "intervalApplying": "間隔を適用中",
+      "intervalUpdated": "{{count}} 件の RouterTeam プロバイダーの自動照会間隔を更新しました",
+      "intervalUpdateFailed": "間隔の更新に失敗しました：{{error}}",
+      "passwordApply": "パスワードを保存",
+      "passwordSaving": "パスワードを保存中",
+      "passwordUpdated": "起動時ログインパスワードを保存しました",
+      "passwordUpdateFailed": "パスワードの保存に失敗しました：{{error}}",
+      "thresholdLabel": "低下しきい値（5時間 / 週）",
+      "thresholdHint": "5時間残量または週残量のいずれかがこの値以下になると、RouterTeam を低下状態として扱います。この設定は保存済みの利用照会スクリプトと復旧・フェイルオーバー判定にも反映されます。",
+      "thresholdApply": "しきい値を保存",
+      "thresholdSaving": "しきい値を保存中",
+      "thresholdUpdated": "RouterTeam の低下しきい値を保存し、関連する {{count}} 件のスクリプトを更新しました",
+      "thresholdUpdateFailed": "しきい値の保存に失敗しました：{{error}}",
+      "invalidThreshold": "0 以上の有効なしきい値を入力してください",
       "apply": "一括適用",
       "applying": "適用中",
       "invalidInterval": "0-86400 の整数秒を入力してください",
-      "updated": "{{count}} 件の RouterTeam プロバイダーを更新しました",
-      "updateFailed": "一括更新に失敗しました：{{error}}"
+      "updated": "{{count}} 件の RouterTeam プロバイダーを更新し、起動時ログイン設定を保存しました",
+      "updateFailed": "一括更新に失敗しました：{{error}}",
+      "loadFailed": "RouterTeam 一括設定の読み込みに失敗しました：{{error}}"
     }
   },
   "errors": {
@@ -2183,12 +2205,13 @@
     "testProvider": "モデルテスト"
   },
   "health": {
-    "operational": "正常",
-    "degraded": "低下",
-    "failed": "失敗",
-    "circuitOpen": "サーキットオープン",
-    "consecutiveFailures": "{{count}} 回連続失敗"
-  },
+      "operational": "正常",
+      "degraded": "低下",
+      "failed": "失敗",
+      "circuitOpen": "サーキットオープン",
+      "consecutiveFailures": "{{count}} 回連続失敗",
+      "usageGuardTriggered": "使用量しきい値により低下状態になりました"
+    },
   "failover": {
     "enabled": "{{app}} フェイルオーバーが有効になりました",
     "disabled": "{{app}} フェイルオーバーが無効になりました",

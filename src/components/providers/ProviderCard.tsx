@@ -5,7 +5,7 @@ import type {
   DraggableAttributes,
   DraggableSyntheticListeners,
 } from "@dnd-kit/core";
-import type { Provider } from "@/types";
+import type { Provider, UsageResult } from "@/types";
 import type { AppId } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ProviderActions } from "@/components/providers/ProviderActions";
@@ -132,6 +132,14 @@ const extractApiUrl = (provider: Provider, fallbackText: string) => {
   return fallbackText;
 };
 
+function usageResultIndicatesDegraded(usage?: UsageResult): boolean {
+  if (!usage?.success || !usage.data?.length) {
+    return false;
+  }
+
+  return usage.data.some((item) => item.isValid === false);
+}
+
 export function ProviderCard({
   provider,
   isCurrent,
@@ -239,6 +247,8 @@ export function ProviderCard({
     enabled: usageEnabled,
     autoQueryInterval,
   });
+  const usageIndicatesDegraded =
+    usageEnabled && usageResultIndicatesDegraded(usage);
 
   const isTokenPlan =
     provider.meta?.usage_script?.templateType === "token_plan";
@@ -404,6 +414,7 @@ export function ProviderCard({
                 <ProviderHealthBadge
                   consecutiveFailures={health.consecutive_failures}
                   isHealthy={health.is_healthy}
+                  forceDegraded={usageIndicatesDegraded}
                 />
               )}
 

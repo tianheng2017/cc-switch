@@ -207,7 +207,10 @@ fn format_compact_metric(value: f64) -> String {
     s
 }
 
-fn format_windowed_quota_summary(result: &crate::provider::UsageResult) -> Option<String> {
+fn format_windowed_quota_summary(
+    result: &crate::provider::UsageResult,
+    degraded_threshold: f64,
+) -> Option<String> {
     let data = result.data.as_ref()?;
     let first = data.iter().find(|item| {
         item.window_remaining_quota.is_some() || item.weekly_remaining_quota.is_some()
@@ -238,10 +241,10 @@ fn format_windowed_quota_summary(result: &crate::provider::UsageResult) -> Optio
     let emoji = if first.is_valid == Some(false)
         || first
             .window_remaining_quota
-            .is_some_and(|value| value <= 0.1)
+            .is_some_and(|value| value <= degraded_threshold)
         || first
             .weekly_remaining_quota
-            .is_some_and(|value| value <= 0.1)
+            .is_some_and(|value| value <= degraded_threshold)
     {
         "\u{1F534}"
     } else {
@@ -251,7 +254,10 @@ fn format_windowed_quota_summary(result: &crate::provider::UsageResult) -> Optio
     Some(format!("{emoji} {}", parts.join(" ")))
 }
 
-fn format_script_summary(result: &crate::provider::UsageResult) -> Option<String> {
+fn format_script_summary(
+    result: &crate::provider::UsageResult,
+    degraded_threshold: f64,
+) -> Option<String> {
     use crate::services::subscription::{TIER_FIVE_HOUR, TIER_WEEKLY_LIMIT};
 
     if !result.success {
@@ -293,7 +299,7 @@ fn format_script_summary(result: &crate::provider::UsageResult) -> Option<String
         return Some(format!("{emoji} {body}"));
     }
 
-    if let Some(summary) = format_windowed_quota_summary(result) {
+    if let Some(summary) = format_windowed_quota_summary(result, degraded_threshold) {
         return Some(summary);
     }
 
@@ -315,14 +321,20 @@ fn format_usage_suffix(
     provider: &crate::provider::Provider,
     provider_id: &str,
 ) -> Option<String> {
+    let degraded_threshold = app_state
+        .db
+        .get_routerteam_usage_degraded_threshold()
+        .unwrap_or(0.1);
+
     // 当前脚本是否启用：禁用/删除时不再沿用旧 UsageCache 结果，
     // 并顺手 invalidate，防止后续重建继续命中过期数据。
     if provider.has_usage_script_enabled() {
         // 脚本缓存优先（覆盖 Copilot/coding_plan/balance/自定义脚本），借用访问避免克隆整条 UsageResult。
-        if let Some(Some(s)) =
-            app_state
-                .usage_cache
-                .with_script(app_type, provider_id, format_script_summary)
+        if let Some(Some(s)) = app_state
+            .usage_cache
+            .with_script(app_type, provider_id, |result| {
+                format_script_summary(result, degraded_threshold)
+            })
         {
             return Some(format!(" · {s}"));
         }
@@ -1125,7 +1137,7 @@ mod tests {
                 usage_data(Some(TIER_WEEKLY_LIMIT), 80.0),
             ],
         );
-        let s = format_script_summary(&r).expect("should format");
+        let s = format_script_summary(&r, 0.1).expect("should format");
         assert!(s.contains("h12%"), "expected h12% in {s}");
         assert!(s.contains("w80%"), "expected w80% in {s}");
         assert!(s.starts_with("\u{1F7E0}"), "expected orange emoji in {s}");
@@ -1140,14 +1152,14 @@ mod tests {
                 usage_data(Some(TIER_WEEKLY_LIMIT), 95.0),
             ],
         );
-        let s = format_script_summary(&r).unwrap();
+        let s = format_script_summary(&r, 0.1).unwrap();
         assert!(s.starts_with("\u{1F534}"), "expected red emoji in {s}");
     }
 
     #[test]
     fn script_summary_token_plan_five_hour_only() {
         let r = usage_result(true, vec![usage_data(Some(TIER_FIVE_HOUR), 8.0)]);
-        let s = format_script_summary(&r).expect("should format");
+        let s = format_script_summary(&r, 0.1).expect("should format");
         assert!(s.contains("h8%"), "expected h8% in {s}");
         assert!(
             !s.contains("plan_name"),
@@ -1158,14 +1170,14 @@ mod tests {
     #[test]
     fn script_summary_token_plan_weekly_only() {
         let r = usage_result(true, vec![usage_data(Some(TIER_WEEKLY_LIMIT), 50.0)]);
-        let s = format_script_summary(&r).expect("should format");
+        let s = format_script_summary(&r, 0.1).expect("should format");
         assert!(s.contains("w50%"), "expected w50% in {s}");
     }
 
     #[test]
     fn script_summary_single_bucket_fallback_with_plan_name() {
         let r = usage_result(true, vec![usage_data(Some("Copilot Pro"), 40.0)]);
-        let s = format_script_summary(&r).expect("should format");
+        let s = format_script_summary(&r, 0.1).expect("should format");
         assert!(s.contains("Copilot Pro"), "expected plan name in {s}");
         assert!(s.contains("40%"), "expected 40% in {s}");
         assert!(
@@ -1177,20 +1189,20 @@ mod tests {
     #[test]
     fn script_summary_single_bucket_fallback_without_plan_name() {
         let r = usage_result(true, vec![usage_data(None, 15.0)]);
-        let s = format_script_summary(&r).expect("should format");
+        let s = format_script_summary(&r, 0.1).expect("should format");
         assert_eq!(s, "\u{1F7E2} 15%", "expected emoji + pct only, got {s}");
     }
 
     #[test]
     fn script_summary_failure_returns_none() {
         let r = usage_result(false, vec![usage_data(Some(TIER_FIVE_HOUR), 12.0)]);
-        assert!(format_script_summary(&r).is_none());
+        assert!(format_script_summary(&r, 0.1).is_none());
     }
 
     #[test]
     fn script_summary_empty_data_returns_none() {
         let r = usage_result(true, vec![]);
-        assert!(format_script_summary(&r).is_none());
+        assert!(format_script_summary(&r, 0.1).is_none());
     }
 
     #[test]
@@ -1201,7 +1213,7 @@ mod tests {
         );
         r.account_balance = Some(12.0);
 
-        let s = format_script_summary(&r).expect("should format");
+        let s = format_script_summary(&r, 0.1).expect("should format");
         assert_eq!(s, "\u{1F7E2} b12 5h4.5 w16.25");
     }
 
@@ -1213,7 +1225,7 @@ mod tests {
         );
         r.account_balance_failed = Some(true);
 
-        let s = format_script_summary(&r).expect("should format");
+        let s = format_script_summary(&r, 0.1).expect("should format");
         assert_eq!(s, "\u{1F7E2} b! 5h4.5 w16.25");
     }
 
@@ -1225,7 +1237,7 @@ mod tests {
         );
         r.account_balance = Some(0.05);
 
-        let s = format_script_summary(&r).expect("should format");
+        let s = format_script_summary(&r, 0.1).expect("should format");
         assert_eq!(s, "\u{1F7E2} b0.05 5h4.5 w16.25");
     }
 }
